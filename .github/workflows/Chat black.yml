@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-android-apk:
-    name: Generate & Compile Chat Black LAN APK
+    name: Generate & Compile Chat Black APK
     runs-on: ubuntu-latest
 
     steps:
@@ -22,20 +22,18 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK Platform 35 & Build Tools
+      # GitHub Actions ubuntu-latest already has Android SDK pre-installed at $ANDROID_HOME.
+      # Accepting licenses directly avoids third-party action crashes.
+      - name: Accept Android SDK Licenses
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
 
       - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Generate Chat Black Project Files
+      - name: Generate Chat Black Android Project
         run: |
           mkdir -p app/src/main/java/com/chatblack/messenger
           mkdir -p app/src/main/res/values
@@ -151,7 +149,7 @@ jobs:
 
               <application
                   android:allowBackup="true"
-                  android:label="Chat Black"
+                  android:label="Messages"
                   android:supportsRtl="true"
                   android:usesCleartextTraffic="true"
                   android:theme="@android:style/Theme.Material.NoActionBar">
@@ -177,23 +175,24 @@ jobs:
           import android.net.wifi.WifiManager
           import android.os.Bundle
           import androidx.activity.ComponentActivity
+          import androidx.activity.compose.BackHandler
           import androidx.activity.compose.setContent
           import androidx.activity.enableEdgeToEdge
-          import androidx.compose.animation.AnimatedVisibility
+          import androidx.compose.animation.*
           import androidx.compose.foundation.background
           import androidx.compose.foundation.border
           import androidx.compose.foundation.clickable
           import androidx.compose.foundation.layout.*
           import androidx.compose.foundation.lazy.LazyColumn
-          import androidx.compose.foundation.lazy.LazyRow
           import androidx.compose.foundation.lazy.items
           import androidx.compose.foundation.lazy.rememberLazyListState
           import androidx.compose.foundation.shape.CircleShape
           import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.foundation.text.BasicTextField
           import androidx.compose.foundation.text.KeyboardActions
           import androidx.compose.foundation.text.KeyboardOptions
           import androidx.compose.material.icons.Icons
-          import androidx.compose.material.icons.automirrored.filled.Send
+          import androidx.compose.material.icons.automirrored.filled.ArrowBack
           import androidx.compose.material.icons.filled.*
           import androidx.compose.material3.*
           import androidx.compose.runtime.*
@@ -201,10 +200,14 @@ jobs:
           import androidx.compose.ui.Modifier
           import androidx.compose.ui.draw.clip
           import androidx.compose.ui.graphics.Color
-          import androidx.compose.ui.platform.LocalFocusManager
+          import androidx.compose.ui.graphics.SolidColor
+          import androidx.compose.ui.platform.LocalClipboardManager
+          import androidx.compose.ui.text.AnnotatedString
+          import androidx.compose.ui.text.TextStyle
           import androidx.compose.ui.text.font.FontFamily
           import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.text.input.ImeAction
+          import androidx.compose.ui.text.style.TextAlign
           import androidx.compose.ui.text.style.TextOverflow
           import androidx.compose.ui.unit.dp
           import androidx.compose.ui.unit.sp
@@ -213,6 +216,7 @@ jobs:
           import androidx.lifecycle.viewModelScope
           import kotlinx.coroutines.*
           import kotlinx.coroutines.flow.*
+          import org.json.JSONArray
           import org.json.JSONObject
           import java.io.BufferedReader
           import java.io.InputStreamReader
@@ -224,22 +228,24 @@ jobs:
           import java.util.concurrent.ConcurrentHashMap
           import kotlin.random.Random
 
+          // ============================================================================
+          // 1. CONFIGURATION & MODELS
+          // ============================================================================
+
           object LanConfig {
               const val UDP_DISCOVERY_PORT = 45454
               const val TCP_MESSAGE_PORT = 45455
               const val MULTICAST_GROUP = "239.255.45.45"
               const val HEARTBEAT_INTERVAL_MS = 3_000L
-              const val PEER_STALE_TIMEOUT_MS = 12_000L
+              const val PEER_STALE_TIMEOUT_MS = 14_000L
               const val SOCKET_CONNECT_TIMEOUT_MS = 3_500
-              const val GLOBAL_CHANNEL_ID = "#lan-global"
-              val CUSTOM_ID_REGEX = Regex("^[a-zA-Z0-9_-]{3,24}$")
           }
 
           data class UserProfile(
-              val customId: String,
-              val displayName: String,
-              val avatarColorHex: Long,
-              val registeredAt: Long
+              val customId: String,     // Unique generated permanent ID e.g. "cb_8392"
+              val displayName: String,  // Friendly display name e.g. "Sarah"
+              val avatarColorHex: Long = 0xFF007AFF,
+              val isConfigured: Boolean = false
           )
 
           data class LanPeer(
@@ -247,12 +253,11 @@ jobs:
               val displayName: String,
               val ipAddress: String,
               val tcpPort: Int = LanConfig.TCP_MESSAGE_PORT,
-              val avatarColorHex: Long = 0xFF10B981,
-              val lastSeenMs: Long = System.currentTimeMillis(),
-              val isManualEntry: Boolean = false
+              val avatarColorHex: Long = 0xFF5856D6,
+              val lastSeenMs: Long = System.currentTimeMillis()
           ) {
               val isOnline: Boolean
-                  get() = isManualEntry || (System.currentTimeMillis() - lastSeenMs) <= LanConfig.PEER_STALE_TIMEOUT_MS
+                  get() = (System.currentTimeMillis() - lastSeenMs) <= LanConfig.PEER_STALE_TIMEOUT_MS
           }
 
           enum class DeliveryStatus {
@@ -263,7 +268,6 @@ jobs:
               val messageId: String = UUID.randomUUID().toString(),
               val senderCustomId: String,
               val senderDisplayName: String,
-              val senderIp: String,
               val recipientCustomId: String,
               val body: String,
               val timestampMs: Long = System.currentTimeMillis(),
@@ -271,213 +275,262 @@ jobs:
               val deliveryStatus: DeliveryStatus = DeliveryStatus.DELIVERED
           )
 
-          class UserIdentityRepository(context: Context) {
-              private val prefs = context.getSharedPreferences("chatblack_identity_prefs", Context.MODE_PRIVATE)
+          data class ChatThread(
+              val peerCustomId: String,
+              val peerDisplayName: String,
+              val peerIp: String = "",
+              val lastMessageText: String = "",
+              val lastMessageTimeMs: Long = System.currentTimeMillis(),
+              val unreadCount: Int = 0,
+              val avatarColorHex: Long = 0xFF007AFF
+          )
+
+          // ============================================================================
+          // 2. PERSISTENCE (USER PROFILE & CHAT HISTORY)
+          // ============================================================================
+
+          class ChatHistoryRepository(context: Context) {
+              private val prefs = context.getSharedPreferences("chatblack_imessage_prefs", Context.MODE_PRIVATE)
 
               companion object {
-                  private const val KEY_CUSTOM_ID = "custom_user_id"
-                  private const val KEY_DISPLAY_NAME = "display_name"
-                  private const val KEY_AVATAR_COLOR = "avatar_color"
-                  private const val KEY_REGISTERED_AT = "registered_at"
+                  private const val KEY_CUSTOM_ID = "profile_custom_id"
+                  private const val KEY_DISPLAY_NAME = "profile_display_name"
+                  private const val KEY_CONFIGURED = "profile_is_configured"
+                  private const val KEY_AVATAR_COLOR = "profile_avatar_color"
+                  private const val KEY_THREADS_JSON = "threads_json"
+                  private const val PREFIX_MESSAGES_JSON = "messages_"
 
-                  val AVATAR_PALETTE = listOf(
-                      0xFF10B981,
-                      0xFF38BDF8,
-                      0xFFA855F7,
-                      0xFFF59E0B,
-                      0xFFEC4899,
-                      0xFF06B6D4,
-                      0xFFEF4444,
-                      0xFF6366F1
+                  val AVATAR_COLORS = listOf(
+                      0xFF007AFF, // iOS Blue
+                      0xFF34C759, // iOS Green
+                      0xFF5856D6, // iOS Purple
+                      0xFFFF9500, // iOS Orange
+                      0xFFFF2D55, // iOS Pink
+                      0xFF5AC8FA, // iOS Light Blue
+                      0xFFAF52DE  // iOS Violet
                   )
               }
 
-              fun loadOrGenerateProfile(localIpHint: String): UserProfile {
-                  val existingId = prefs.getString(KEY_CUSTOM_ID, null)
-                  if (!existingId.isNullOrBlank()) {
-                      return UserProfile(
-                          customId = existingId,
-                          displayName = prefs.getString(KEY_DISPLAY_NAME, existingId) ?: existingId,
-                          avatarColorHex = prefs.getLong(KEY_AVATAR_COLOR, AVATAR_PALETTE.first()),
-                          registeredAt = prefs.getLong(KEY_REGISTERED_AT, System.currentTimeMillis())
-                      )
+              fun loadProfile(): UserProfile {
+                  val configured = prefs.getBoolean(KEY_CONFIGURED, false)
+                  var customId = prefs.getString(KEY_CUSTOM_ID, null)
+                  if (customId.isNullOrBlank()) {
+                      val randomNum = Random.nextInt(1000, 9999)
+                      customId = "cb_$randomNum"
+                      prefs.edit().putString(KEY_CUSTOM_ID, customId).apply()
                   }
-
-                  val lastOctet = localIpHint.substringAfterLast('.', "0").takeIf { it != "0" }
-                      ?: Random.nextInt(10, 99).toString()
-                  val randomSuffix = Random.nextInt(100, 999)
-                  val defaultId = "user_${lastOctet}_$randomSuffix"
-                  val defaultName = "User $lastOctet"
-                  val defaultColor = AVATAR_PALETTE.random()
-                  val now = System.currentTimeMillis()
-
-                  val initialProfile = UserProfile(
-                      customId = defaultId,
-                      displayName = defaultName,
-                      avatarColorHex = defaultColor,
-                      registeredAt = now
+                  val displayName = prefs.getString(KEY_DISPLAY_NAME, "") ?: ""
+                  val color = prefs.getLong(KEY_AVATAR_COLOR, AVATAR_COLORS.first())
+                  return UserProfile(
+                      customId = customId,
+                      displayName = displayName,
+                      avatarColorHex = color,
+                      isConfigured = configured
                   )
-                  saveProfile(initialProfile)
-                  return initialProfile
               }
 
               fun saveProfile(profile: UserProfile) {
                   prefs.edit()
-                      .putString(KEY_CUSTOM_ID, profile.customId.trim())
+                      .putString(KEY_CUSTOM_ID, profile.customId)
                       .putString(KEY_DISPLAY_NAME, profile.displayName.trim())
                       .putLong(KEY_AVATAR_COLOR, profile.avatarColorHex)
-                      .putLong(KEY_REGISTERED_AT, profile.registeredAt)
+                      .putBoolean(KEY_CONFIGURED, true)
                       .apply()
               }
 
-              fun validateCustomId(candidate: String, activePeers: Collection<LanPeer>, currentOwnId: String): String? {
-                  val cleaned = candidate.trim().removePrefix("@")
-                  if (!LanConfig.CUSTOM_ID_REGEX.matches(cleaned)) {
-                      return "ID must be 3-24 characters using letters, numbers, '_' or '-'."
+              fun loadThreads(): List<ChatThread> {
+                  val jsonStr = prefs.getString(KEY_THREADS_JSON, "[]") ?: "[]"
+                  val result = mutableListOf<ChatThread>()
+                  runCatching {
+                      val arr = JSONArray(jsonStr)
+                      for (i in 0 until arr.length()) {
+                          val obj = arr.getJSONObject(i)
+                          result.add(
+                              ChatThread(
+                                  peerCustomId = obj.getString("peerCustomId"),
+                                  peerDisplayName = obj.optString("peerDisplayName", obj.getString("peerCustomId")),
+                                  peerIp = obj.optString("peerIp", ""),
+                                  lastMessageText = obj.optString("lastMessageText", ""),
+                                  lastMessageTimeMs = obj.optLong("lastMessageTimeMs", System.currentTimeMillis()),
+                                  unreadCount = obj.optInt("unreadCount", 0),
+                                  avatarColorHex = obj.optLong("avatarColorHex", 0xFF007AFF)
+                              )
+                          )
+                      }
                   }
-                  val conflictPeer = activePeers.firstOrNull {
-                      it.customId.equals(cleaned, ignoreCase = true) &&
-                          !it.customId.equals(currentOwnId, ignoreCase = true)
+                  return result.sortedByDescending { it.lastMessageTimeMs }
+              }
+
+              fun saveThreads(threads: List<ChatThread>) {
+                  val arr = JSONArray()
+                  threads.forEach { thread ->
+                      val obj = JSONObject().apply {
+                          put("peerCustomId", thread.peerCustomId)
+                          put("peerDisplayName", thread.peerDisplayName)
+                          put("peerIp", thread.peerIp)
+                          put("lastMessageText", thread.lastMessageText)
+                          put("lastMessageTimeMs", thread.lastMessageTimeMs)
+                          put("unreadCount", thread.unreadCount)
+                          put("avatarColorHex", thread.avatarColorHex)
+                      }
+                      arr.put(obj)
                   }
-                  if (conflictPeer != null) {
-                      return "ID '@$cleaned' is already active on LAN (${conflictPeer.ipAddress})."
+                  prefs.edit().putString(KEY_THREADS_JSON, arr.toString()).apply()
+              }
+
+              fun loadMessages(peerCustomId: String): List<LanMessage> {
+                  val jsonStr = prefs.getString(PREFIX_MESSAGES_JSON + peerCustomId.lowercase(), "[]") ?: "[]"
+                  val result = mutableListOf<LanMessage>()
+                  runCatching {
+                      val arr = JSONArray(jsonStr)
+                      for (i in 0 until arr.length()) {
+                          val obj = arr.getJSONObject(i)
+                          result.add(
+                              LanMessage(
+                                  messageId = obj.getString("messageId"),
+                                  senderCustomId = obj.getString("senderCustomId"),
+                                  senderDisplayName = obj.optString("senderDisplayName", ""),
+                                  recipientCustomId = obj.getString("recipientCustomId"),
+                                  body = obj.getString("body"),
+                                  timestampMs = obj.getLong("timestampMs"),
+                                  isOutgoing = obj.getBoolean("isOutgoing"),
+                                  deliveryStatus = DeliveryStatus.valueOf(obj.optString("status", "DELIVERED"))
+                              )
+                          )
+                      }
                   }
-                  return null
+                  return result
+              }
+
+              fun saveMessages(peerCustomId: String, messages: List<LanMessage>) {
+                  val arr = JSONArray()
+                  messages.takeLast(200).forEach { msg ->
+                      val obj = JSONObject().apply {
+                          put("messageId", msg.messageId)
+                          put("senderCustomId", msg.senderCustomId)
+                          put("senderDisplayName", msg.senderDisplayName)
+                          put("recipientCustomId", msg.recipientCustomId)
+                          put("body", msg.body)
+                          put("timestampMs", msg.timestampMs)
+                          put("isOutgoing", msg.isOutgoing)
+                          put("status", msg.deliveryStatus.name)
+                      }
+                      arr.put(obj)
+                  }
+                  prefs.edit().putString(PREFIX_MESSAGES_JSON + peerCustomId.lowercase(), arr.toString()).apply()
               }
           }
+
+          // ============================================================================
+          // 3. LAN NETWORK ENGINE (UDP AUTO-DISCOVERY + TCP P2P SOCKS)
+          // ============================================================================
 
           class LanNetworkEngine(
               private val appContext: Context,
               private val scope: CoroutineScope,
-              private val onPeerDiscoveredOrUpdated: (LanPeer) -> Unit,
-              private val onPeerLeft: (String) -> Unit,
-              private val onMessageReceived: (LanMessage) -> Unit,
-              private val onDeliveryAck: (String) -> Unit,
-              private val onIdCollisionDetected: (String, String) -> Unit
+              private val onPeerUpdated: (LanPeer) -> Unit,
+              private val onMessageReceived: (LanMessage, String) -> Unit,
+              private val onDeliveryAck: (String) -> Unit
           ) {
               private var multicastLock: WifiManager.MulticastLock? = null
               private var multicastSocket: MulticastSocket? = null
-              private var tcpServerSocket: ServerSocket? = null
+              private var serverSocket: ServerSocket? = null
 
-              private var discoveryJob: Job? = null
               private var heartbeatJob: Job? = null
-              private var tcpServerJob: Job? = null
+              private var discoveryJob: Job? = null
+              private var serverJob: Job? = null
 
               @Volatile
-              var currentProfile: UserProfile = UserProfile("user_init", "User", 0xFF10B981, System.currentTimeMillis())
+              var currentProfile: UserProfile = UserProfile("cb_init", "User")
 
               fun start(profile: UserProfile) {
                   currentProfile = profile
                   acquireMulticastLock()
-                  startUdpDiscoveryListener()
-                  startTcpMessageServer()
-                  startHeartbeatBroadcaster()
+                  startUdpListener()
+                  startTcpServer()
+                  startHeartbeat()
               }
 
-              fun updateIdentityAndAnnounce(newProfile: UserProfile) {
-                  currentProfile = newProfile
+              fun updateProfile(profile: UserProfile) {
+                  currentProfile = profile
                   scope.launch(Dispatchers.IO) {
-                      sendDiscoveryPacket(type = "ANNOUNCE")
+                      broadcastHeartbeat()
                   }
               }
 
               fun stop() {
-                  runBlocking(Dispatchers.IO) {
-                      withTimeoutOrNull(500L) {
-                          sendDiscoveryPacket(type = "BYE")
-                      }
-                  }
-                  discoveryJob?.cancel()
                   heartbeatJob?.cancel()
-                  tcpServerJob?.cancel()
+                  discoveryJob?.cancel()
+                  serverJob?.cancel()
                   runCatching { multicastSocket?.close() }
-                  runCatching { tcpServerSocket?.close() }
-                  releaseMulticastLock()
+                  runCatching { serverSocket?.close() }
+                  if (multicastLock?.isHeld == true) multicastLock?.release()
               }
 
               private fun acquireMulticastLock() {
                   runCatching {
-                      val wifiManager = appContext.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-                      multicastLock = wifiManager?.createMulticastLock("ChatBlackMulticastLock")?.apply {
+                      val wifi = appContext.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                      multicastLock = wifi?.createMulticastLock("ChatBlackMulticast")?.apply {
                           setReferenceCounted(true)
                           acquire()
                       }
                   }
               }
 
-              private fun releaseMulticastLock() {
+              fun getLocalIp(): String {
                   runCatching {
-                      if (multicastLock?.isHeld == true) {
-                          multicastLock?.release()
-                      }
-                  }
-              }
-
-              fun getLocalIpv4Info(): Pair<String, InetAddress> {
-                  runCatching {
-                      val interfaces = NetworkInterface.getNetworkInterfaces() ?: return@runCatching
+                      val interfaces = NetworkInterface.getNetworkInterfaces() ?: return "127.0.0.1"
                       for (nif in Collections.list(interfaces)) {
                           if (!nif.isUp || nif.isLoopback) continue
                           for (ia in nif.interfaceAddresses) {
                               val addr = ia.address
                               if (addr is Inet4Address && !addr.isLoopbackAddress && addr.isSiteLocalAddress) {
-                                  val bcast = ia.broadcast ?: InetAddress.getByName("255.255.255.255")
-                                  return Pair(addr.hostAddress ?: "0.0.0.0", bcast)
+                                  return addr.hostAddress ?: "127.0.0.1"
                               }
                           }
                       }
                   }
-                  return Pair("0.0.0.0", InetAddress.getByName("255.255.255.255"))
+                  return "127.0.0.1"
               }
 
-              private fun startHeartbeatBroadcaster() {
+              private fun startHeartbeat() {
                   heartbeatJob?.cancel()
                   heartbeatJob = scope.launch(Dispatchers.IO) {
                       while (isActive) {
-                          sendDiscoveryPacket(type = "ANNOUNCE")
+                          broadcastHeartbeat()
                           delay(LanConfig.HEARTBEAT_INTERVAL_MS)
                       }
                   }
               }
 
-              private fun sendDiscoveryPacket(type: String) {
+              private fun broadcastHeartbeat() {
                   runCatching {
-                      val (localIp, subnetBroadcast) = getLocalIpv4Info()
-                      if (localIp == "0.0.0.0") return
+                      val localIp = getLocalIp()
+                      if (localIp == "127.0.0.1") return
 
                       val payload = JSONObject().apply {
-                          put("type", type)
+                          put("type", "HEARTBEAT")
                           put("customId", currentProfile.customId)
                           put("displayName", currentProfile.displayName)
                           put("ip", localIp)
                           put("tcpPort", LanConfig.TCP_MESSAGE_PORT)
                           put("avatarColor", currentProfile.avatarColorHex)
-                          put("registeredAt", currentProfile.registeredAt)
                       }.toString().toByteArray(Charsets.UTF_8)
 
-                      DatagramSocket().use { sender ->
-                          sender.broadcast = true
-                          val subnetPacket = DatagramPacket(
-                              payload,
-                              payload.size,
-                              subnetBroadcast,
-                              LanConfig.UDP_DISCOVERY_PORT
-                          )
-                          runCatching { sender.send(subnetPacket) }
+                      DatagramSocket().use { socket ->
+                          socket.broadcast = true
+                          // Subnet broadcast
+                          val bcastPacket = DatagramPacket(payload, payload.size, InetAddress.getByName("255.255.255.255"), LanConfig.UDP_DISCOVERY_PORT)
+                          socket.send(bcastPacket)
 
-                          val multicastAddr = InetAddress.getByName(LanConfig.MULTICAST_GROUP)
-                          val multicastPacket = DatagramPacket(
-                              payload,
-                              payload.size,
-                              multicastAddr,
-                              LanConfig.UDP_DISCOVERY_PORT
-                          )
-                          runCatching { sender.send(multicastPacket) }
+                          // Multicast group
+                          val multiPacket = DatagramPacket(payload, payload.size, InetAddress.getByName(LanConfig.MULTICAST_GROUP), LanConfig.UDP_DISCOVERY_PORT)
+                          socket.send(multiPacket)
                       }
                   }
               }
 
-              private fun startUdpDiscoveryListener() {
+              private fun startUdpListener() {
                   discoveryJob?.cancel()
                   discoveryJob = scope.launch(Dispatchers.IO) {
                       runCatching {
@@ -495,452 +548,450 @@ jobs:
                           while (isActive && !socket.isClosed) {
                               val packet = DatagramPacket(buffer, buffer.size)
                               socket.receive(packet)
-                              val rawJson = String(packet.data, 0, packet.length, Charsets.UTF_8)
-                              handleDiscoveryJson(rawJson, packet.address.hostAddress ?: "")
+                              val jsonStr = String(packet.data, 0, packet.length, Charsets.UTF_8)
+                              handleUdpPacket(jsonStr, packet.address.hostAddress ?: "")
                           }
                       }
                   }
               }
 
-              private fun handleDiscoveryJson(rawJson: String, packetSourceIp: String) {
+              private fun handleUdpPacket(jsonStr: String, remoteIp: String) {
                   runCatching {
-                      val json = JSONObject(rawJson)
-                      val type = json.optString("type", "ANNOUNCE")
+                      val json = JSONObject(jsonStr)
                       val peerId = json.optString("customId", "").trim()
-                      val peerName = json.optString("displayName", peerId)
-                      val reportedIp = json.optString("ip", packetSourceIp).ifBlank { packetSourceIp }
-                      val tcpPort = json.optInt("tcpPort", LanConfig.TCP_MESSAGE_PORT)
-                      val avatarColor = json.optLong("avatarColor", 0xFF10B981)
-                      val peerRegisteredAt = json.optLong("registeredAt", Long.MAX_VALUE)
+                      val peerName = json.optString("displayName", peerId).ifBlank { peerId }
+                      val ip = json.optString("ip", remoteIp).ifBlank { remoteIp }
+                      val port = json.optInt("tcpPort", LanConfig.TCP_MESSAGE_PORT)
+                      val color = json.optLong("avatarColor", 0xFF5856D6)
 
-                      val (localIp, _) = getLocalIpv4Info()
-                      if (reportedIp == localIp && peerId.equals(currentProfile.customId, ignoreCase = true)) {
-                          return
-                      }
+                      if (peerId.equals(currentProfile.customId, ignoreCase = true)) return
 
-                      if (type == "BYE") {
-                          onPeerLeft(peerId)
-                          return
-                      }
-
-                      if (peerId.equals(currentProfile.customId, ignoreCase = true) && reportedIp != localIp) {
-                          if (peerRegisteredAt < currentProfile.registeredAt) {
-                              onIdCollisionDetected(peerId, reportedIp)
-                          }
-                      }
-
-                      val peer = LanPeer(
-                          customId = peerId,
-                          displayName = peerName,
-                          ipAddress = reportedIp,
-                          tcpPort = tcpPort,
-                          avatarColorHex = avatarColor,
-                          lastSeenMs = System.currentTimeMillis()
+                      onPeerUpdated(
+                          LanPeer(
+                              customId = peerId,
+                              displayName = peerName,
+                              ipAddress = ip,
+                              tcpPort = port,
+                              avatarColorHex = color,
+                              lastSeenMs = System.currentTimeMillis()
+                          )
                       )
-                      onPeerDiscoveredOrUpdated(peer)
                   }
               }
 
-              private fun startTcpMessageServer() {
-                  tcpServerJob?.cancel()
-                  tcpServerJob = scope.launch(Dispatchers.IO) {
+              private fun startTcpServer() {
+                  serverJob?.cancel()
+                  serverJob = scope.launch(Dispatchers.IO) {
                       runCatching {
                           val server = ServerSocket().apply {
                               reuseAddress = true
                               bind(InetSocketAddress(LanConfig.TCP_MESSAGE_PORT))
                           }
-                          tcpServerSocket = server
+                          serverSocket = server
 
                           while (isActive && !server.isClosed) {
-                              val clientSocket = server.accept()
+                              val client = server.accept()
                               launch(Dispatchers.IO) {
-                                  handleIncomingTcpConnection(clientSocket)
+                                  handleTcpClient(client)
                               }
                           }
                       }
                   }
               }
 
-              private fun handleIncomingTcpConnection(socket: Socket) {
-                  socket.use { client ->
+              private fun handleTcpClient(client: Socket) {
+                  client.use { socket ->
                       runCatching {
-                          client.soTimeout = 5_000
-                          val remoteIp = client.inetAddress.hostAddress ?: "0.0.0.0"
-                          val reader = BufferedReader(InputStreamReader(client.getInputStream(), Charsets.UTF_8))
-                          val writer = PrintWriter(OutputStreamWriter(client.getOutputStream(), Charsets.UTF_8), true)
+                          socket.soTimeout = 4_000
+                          val remoteIp = socket.inetAddress.hostAddress ?: ""
+                          val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                          val writer = PrintWriter(OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8), true)
 
                           val line = reader.readLine() ?: return
                           val json = JSONObject(line)
-                          when (json.optString("packetType")) {
-                              "CHAT_MESSAGE" -> {
-                                  val msgId = json.optString("messageId", UUID.randomUUID().toString())
-                                  val senderId = json.optString("senderCustomId", "unknown")
-                                  val senderName = json.optString("senderDisplayName", senderId)
-                                  val senderAvatar = json.optLong("senderAvatarColor", 0xFF10B981)
-                                  val recipientId = json.optString("recipientCustomId", LanConfig.GLOBAL_CHANNEL_ID)
-                                  val body = json.optString("body", "")
-                                  val timestamp = json.optLong("timestampMs", System.currentTimeMillis())
+                          if (json.optString("packetType") == "CHAT_MESSAGE") {
+                              val msgId = json.getString("messageId")
+                              val senderId = json.getString("senderCustomId")
+                              val senderName = json.optString("senderDisplayName", senderId)
+                              val recipientId = json.getString("recipientCustomId")
+                              val body = json.getString("body")
+                              val time = json.optLong("timestampMs", System.currentTimeMillis())
+                              val avatar = json.optLong("senderAvatarColor", 0xFF5856D6)
 
-                                  onPeerDiscoveredOrUpdated(
-                                      LanPeer(
-                                          customId = senderId,
-                                          displayName = senderName,
-                                          ipAddress = remoteIp,
-                                          avatarColorHex = senderAvatar,
-                                          lastSeenMs = System.currentTimeMillis()
-                                      )
+                              onPeerUpdated(
+                                  LanPeer(
+                                      customId = senderId,
+                                      displayName = senderName,
+                                      ipAddress = remoteIp,
+                                      avatarColorHex = avatar,
+                                      lastSeenMs = System.currentTimeMillis()
                                   )
+                              )
 
-                                  val incomingMsg = LanMessage(
-                                      messageId = msgId,
-                                      senderCustomId = senderId,
-                                      senderDisplayName = senderName,
-                                      senderIp = remoteIp,
-                                      recipientCustomId = recipientId,
-                                      body = body,
-                                      timestampMs = timestamp,
-                                      isOutgoing = false,
-                                      deliveryStatus = DeliveryStatus.DELIVERED
-                                  )
-                                  onMessageReceived(incomingMsg)
+                              val incoming = LanMessage(
+                                  messageId = msgId,
+                                  senderCustomId = senderId,
+                                  senderDisplayName = senderName,
+                                  recipientCustomId = recipientId,
+                                  body = body,
+                                  timestampMs = time,
+                                  isOutgoing = false,
+                                  deliveryStatus = DeliveryStatus.DELIVERED
+                              )
+                              onMessageReceived(incoming, remoteIp)
 
-                                  val ackJson = JSONObject().apply {
-                                      put("packetType", "DELIVERY_ACK")
-                                      put("messageId", msgId)
-                                      put("receiverCustomId", currentProfile.customId)
-                                  }
-                                  writer.println(ackJson.toString())
+                              // Send ACK
+                              val ack = JSONObject().apply {
+                                  put("packetType", "DELIVERY_ACK")
+                                  put("messageId", msgId)
                               }
+                              writer.println(ack.toString())
                           }
                       }
                   }
               }
 
-              suspend fun sendTcpPacketToPeer(
-                  targetIp: String,
-                  targetPort: Int = LanConfig.TCP_MESSAGE_PORT,
-                  message: LanMessage
-              ): Boolean = withContext(Dispatchers.IO) {
-                  runCatching {
-                      Socket().use { socket ->
-                          socket.connect(InetSocketAddress(targetIp, targetPort), LanConfig.SOCKET_CONNECT_TIMEOUT_MS)
-                          socket.soTimeout = LanConfig.SOCKET_CONNECT_TIMEOUT_MS
+              suspend fun sendMessage(targetIp: String, targetPort: Int = LanConfig.TCP_MESSAGE_PORT, message: LanMessage): Boolean =
+                  withContext(Dispatchers.IO) {
+                      runCatching {
+                          Socket().use { socket ->
+                              socket.connect(InetSocketAddress(targetIp, targetPort), LanConfig.SOCKET_CONNECT_TIMEOUT_MS)
+                              socket.soTimeout = LanConfig.SOCKET_CONNECT_TIMEOUT_MS
 
-                          val writer = PrintWriter(OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8), true)
-                          val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                              val writer = PrintWriter(OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8), true)
+                              val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
 
-                          val payload = JSONObject().apply {
-                              put("packetType", "CHAT_MESSAGE")
-                              put("messageId", message.messageId)
-                              put("senderCustomId", currentProfile.customId)
-                              put("senderDisplayName", currentProfile.displayName)
-                              put("senderAvatarColor", currentProfile.avatarColorHex)
-                              put("recipientCustomId", message.recipientCustomId)
-                              put("body", message.body)
-                              put("timestampMs", message.timestampMs)
-                          }
-                          writer.println(payload.toString())
-
-                          val ackLine = reader.readLine()
-                          if (ackLine != null) {
-                              val ackJson = JSONObject(ackLine)
-                              if (ackJson.optString("packetType") == "DELIVERY_ACK" &&
-                                  ackJson.optString("messageId") == message.messageId
-                              ) {
-                                  onDeliveryAck(message.messageId)
-                                  return@withContext true
+                              val payload = JSONObject().apply {
+                                  put("packetType", "CHAT_MESSAGE")
+                                  put("messageId", message.messageId)
+                                  put("senderCustomId", currentProfile.customId)
+                                  put("senderDisplayName", currentProfile.displayName)
+                                  put("senderAvatarColor", currentProfile.avatarColorHex)
+                                  put("recipientCustomId", message.recipientCustomId)
+                                  put("body", message.body)
+                                  put("timestampMs", message.timestampMs)
                               }
+                              writer.println(payload.toString())
+
+                              val ackLine = reader.readLine()
+                              if (ackLine != null) {
+                                  val ackJson = JSONObject(ackLine)
+                                  if (ackJson.optString("packetType") == "DELIVERY_ACK" &&
+                                      ackJson.optString("messageId") == message.messageId) {
+                                      onDeliveryAck(message.messageId)
+                                      return@withContext true
+                                  }
+                              }
+                              true
                           }
-                          true
-                      }
-                  }.getOrDefault(false)
-              }
+                      }.getOrDefault(false)
+                  }
           }
 
-          data class LanMessengerUiState(
-              val userProfile: UserProfile,
-              val localIpAddress: String = "0.0.0.0",
-              val activeChannelId: String = LanConfig.GLOBAL_CHANNEL_ID,
-              val peers: List<LanPeer> = emptyList(),
-              val messagesByChannel: Map<String, List<LanMessage>> = emptyMap(),
-              val unreadCounts: Map<String, Int> = emptyMap(),
-              val collisionBanner: String? = null
+          // ============================================================================
+          // 4. VIEWMODEL
+          // ============================================================================
+
+          data class AppUiState(
+              val profile: UserProfile,
+              val localIp: String = "127.0.0.1",
+              val threads: List<ChatThread> = emptyList(),
+              val activePeerId: String? = null,
+              val currentMessages: List<LanMessage> = emptyList(),
+              val discoveredPeers: List<LanPeer> = emptyList()
           )
 
-          class LanMessengerViewModel(applicationContext: Context) : ViewModel() {
-              private val identityRepo = UserIdentityRepository(applicationContext)
+          class MainViewModel(applicationContext: Context) : ViewModel() {
+              private val repo = ChatHistoryRepository(applicationContext)
               private val peerMap = ConcurrentHashMap<String, LanPeer>()
 
-              private val _uiState: MutableStateFlow<LanMessengerUiState>
-              val uiState: StateFlow<LanMessengerUiState>
+              private val _uiState: MutableStateFlow<AppUiState>
+              val uiState: StateFlow<AppUiState>
 
-              private val networkEngine: LanNetworkEngine
+              private val network: LanNetworkEngine
 
               init {
-                  networkEngine = LanNetworkEngine(
-                      appContext = applicationContext,
-                      scope = viewModelScope,
-                      onPeerDiscoveredOrUpdated = { peer -> upsertPeer(peer) },
-                      onPeerLeft = { customId -> removePeer(customId) },
-                      onMessageReceived = { msg -> handleIncomingMessage(msg) },
-                      onDeliveryAck = { msgId -> markMessageStatus(msgId, DeliveryStatus.DELIVERED) },
-                      onIdCollisionDetected = { id, otherIp ->
-                          _uiState.update {
-                              it.copy(
-                                  collisionBanner = "Custom ID '@$id' is already claimed by $otherIp on this LAN. Tap your ID badge to pick a unique handle."
-                              )
-                          }
-                      }
-                  )
+                  val initialProfile = repo.loadProfile()
+                  val initialThreads = repo.loadThreads()
 
-                  val (initialIp, _) = networkEngine.getLocalIpv4Info()
-                  val profile = identityRepo.loadOrGenerateProfile(initialIp)
                   _uiState = MutableStateFlow(
-                      LanMessengerUiState(
-                          userProfile = profile,
-                          localIpAddress = initialIp
+                      AppUiState(
+                          profile = initialProfile,
+                          threads = initialThreads
                       )
                   )
                   uiState = _uiState.asStateFlow()
 
-                  networkEngine.start(profile)
+                  network = LanNetworkEngine(
+                      appContext = applicationContext,
+                      scope = viewModelScope,
+                      onPeerUpdated = { peer -> handlePeerDiscovered(peer) },
+                      onMessageReceived = { msg, senderIp -> handleIncomingMessage(msg, senderIp) },
+                      onDeliveryAck = { msgId -> updateMessageStatus(msgId, DeliveryStatus.DELIVERED) }
+                  )
+
+                  _uiState.update { it.copy(localIp = network.getLocalIp()) }
+                  network.start(initialProfile)
 
                   viewModelScope.launch {
                       while (isActive) {
-                          delay(2_500L)
-                          val (currentIp, _) = networkEngine.getLocalIpv4Info()
-                          pruneStalePeers()
-                          _uiState.update { state ->
-                              state.copy(
-                                  localIpAddress = currentIp,
-                                  peers = peerMap.values.sortedBy { it.customId.lowercase() }
+                          delay(3_000L)
+                          val currentIp = network.getLocalIp()
+                          _uiState.update {
+                              it.copy(
+                                  localIp = currentIp,
+                                  discoveredPeers = peerMap.values.sortedBy { p -> p.displayName.lowercase() }
                               )
                           }
                       }
                   }
               }
 
-              private fun upsertPeer(peer: LanPeer) {
+              fun completeOnboarding(name: String, selectedColor: Long) {
+                  val updated = _uiState.value.profile.copy(
+                      displayName = name.trim(),
+                      avatarColorHex = selectedColor,
+                      isConfigured = true
+                  )
+                  repo.saveProfile(updated)
+                  network.updateProfile(updated)
+                  _uiState.update { it.copy(profile = updated) }
+              }
+
+              private fun handlePeerDiscovered(peer: LanPeer) {
                   val key = peer.customId.lowercase()
                   peerMap[key] = peer
                   _uiState.update { state ->
-                      state.copy(peers = peerMap.values.sortedBy { it.customId.lowercase() })
-                  }
-              }
-
-              private fun removePeer(customId: String) {
-                  peerMap.remove(customId.lowercase())
-                  _uiState.update { state ->
-                      state.copy(peers = peerMap.values.sortedBy { it.customId.lowercase() })
-                  }
-              }
-
-              private fun pruneStalePeers() {
-                  val now = System.currentTimeMillis()
-                  val iterator = peerMap.entries.iterator()
-                  while (iterator.hasNext()) {
-                      val entry = iterator.next()
-                      if (!entry.value.isManualEntry && (now - entry.value.lastSeenMs) > LanConfig.PEER_STALE_TIMEOUT_MS) {
-                          iterator.remove()
+                      val updatedThreads = state.threads.map { th ->
+                          if (th.peerCustomId.equals(peer.customId, ignoreCase = true)) {
+                              th.copy(
+                                  peerDisplayName = peer.displayName,
+                                  peerIp = peer.ipAddress,
+                                  avatarColorHex = peer.avatarColorHex
+                              )
+                          } else th
                       }
-                  }
-              }
+                      if (updatedThreads != state.threads) repo.saveThreads(updatedThreads)
 
-              fun selectChannel(channelId: String) {
-                  _uiState.update { state ->
-                      val updatedUnread = state.unreadCounts.toMutableMap().apply { remove(channelId) }
                       state.copy(
-                          activeChannelId = channelId,
-                          unreadCounts = updatedUnread
+                          threads = updatedThreads,
+                          discoveredPeers = peerMap.values.sortedBy { p -> p.displayName.lowercase() }
                       )
                   }
               }
 
-              fun validateCustomId(candidateId: String): String? {
-                  return identityRepo.validateCustomId(
-                      candidate = candidateId,
-                      activePeers = peerMap.values,
-                      currentOwnId = _uiState.value.userProfile.customId
-                  )
-              }
+              fun openChat(peerCustomId: String, peerDisplayName: String? = null, peerIp: String? = null) {
+                  val cleanedId = peerCustomId.trim().removePrefix("@")
+                  val knownPeer = peerMap[cleanedId.lowercase()]
+                  val effectiveName = peerDisplayName ?: knownPeer?.displayName ?: cleanedId
+                  val effectiveIp = peerIp ?: knownPeer?.ipAddress ?: ""
+                  val effectiveColor = knownPeer?.avatarColorHex ?: ChatHistoryRepository.AVATAR_COLORS.random()
 
-              fun updateIdentity(newCustomId: String, newDisplayName: String, newAvatarColor: Long) {
-                  val cleanedId = newCustomId.trim().removePrefix("@")
-                  val cleanedName = newDisplayName.trim().ifBlank { cleanedId }
-                  val updatedProfile = UserProfile(
-                      customId = cleanedId,
-                      displayName = cleanedName,
-                      avatarColorHex = newAvatarColor,
-                      registeredAt = System.currentTimeMillis()
-                  )
-                  identityRepo.saveProfile(updatedProfile)
-                  networkEngine.updateIdentityAndAnnounce(updatedProfile)
+                  val existingThreads = _uiState.value.threads.toMutableList()
+                  val existingIndex = existingThreads.indexOfFirst { it.peerCustomId.equals(cleanedId, ignoreCase = true) }
+                  if (existingIndex == -1) {
+                      val newThread = ChatThread(
+                          peerCustomId = cleanedId,
+                          peerDisplayName = effectiveName,
+                          peerIp = effectiveIp,
+                          avatarColorHex = effectiveColor
+                      )
+                      existingThreads.add(0, newThread)
+                  } else {
+                      val current = existingThreads[existingIndex]
+                      existingThreads[existingIndex] = current.copy(
+                          peerDisplayName = effectiveName,
+                          peerIp = if (effectiveIp.isNotBlank()) effectiveIp else current.peerIp,
+                          unreadCount = 0
+                      )
+                  }
+                  repo.saveThreads(existingThreads)
+
+                  val messages = repo.loadMessages(cleanedId)
                   _uiState.update {
                       it.copy(
-                          userProfile = updatedProfile,
-                          collisionBanner = null
+                          threads = existingThreads,
+                          activePeerId = cleanedId,
+                          currentMessages = messages
                       )
                   }
               }
 
-              fun addManualPeer(customId: String, ipAddress: String) {
-                  val cleanedId = customId.trim().removePrefix("@")
-                  val cleanedIp = ipAddress.trim()
-                  if (cleanedId.isBlank() || cleanedIp.isBlank()) return
-                  val manualPeer = LanPeer(
-                      customId = cleanedId,
-                      displayName = cleanedId,
-                      ipAddress = cleanedIp,
-                      avatarColorHex = UserIdentityRepository.AVATAR_PALETTE.random(),
-                      lastSeenMs = System.currentTimeMillis(),
-                      isManualEntry = true
-                  )
-                  upsertPeer(manualPeer)
-                  selectChannel(cleanedId)
+              fun closeChat() {
+                  _uiState.update { it.copy(activePeerId = null, currentMessages = emptyList()) }
               }
 
               fun sendMessage(text: String) {
+                  val activePeer = _uiState.value.activePeerId ?: return
                   val trimmed = text.trim()
                   if (trimmed.isEmpty()) return
 
                   val state = _uiState.value
-                  val channelId = state.activeChannelId
                   val outgoing = LanMessage(
-                      senderCustomId = state.userProfile.customId,
-                      senderDisplayName = state.userProfile.displayName,
-                      senderIp = state.localIpAddress,
-                      recipientCustomId = channelId,
+                      senderCustomId = state.profile.customId,
+                      senderDisplayName = state.profile.displayName,
+                      recipientCustomId = activePeer,
                       body = trimmed,
                       isOutgoing = true,
                       deliveryStatus = DeliveryStatus.SENDING
                   )
 
-                  appendMessageToChannel(channelId, outgoing)
+                  val updatedMessages = state.currentMessages + outgoing
+                  repo.saveMessages(activePeer, updatedMessages)
+
+                  val updatedThreads = state.threads.map { th ->
+                      if (th.peerCustomId.equals(activePeer, ignoreCase = true)) {
+                          th.copy(
+                              lastMessageText = trimmed,
+                              lastMessageTimeMs = outgoing.timestampMs
+                          )
+                      } else th
+                  }.sortedByDescending { it.lastMessageTimeMs }
+                  repo.saveThreads(updatedThreads)
+
+                  _uiState.update {
+                      it.copy(
+                          currentMessages = updatedMessages,
+                          threads = updatedThreads
+                      )
+                  }
+
+                  val thread = updatedThreads.firstOrNull { it.peerCustomId.equals(activePeer, ignoreCase = true) }
+                  val targetIp = peerMap[activePeer.lowercase()]?.ipAddress ?: thread?.peerIp.orEmpty()
+
+                  if (targetIp.isBlank()) {
+                      updateMessageStatus(outgoing.messageId, DeliveryStatus.FAILED)
+                      return
+                  }
 
                   viewModelScope.launch {
-                      if (channelId == LanConfig.GLOBAL_CHANNEL_ID) {
-                          val targets = peerMap.values.toList()
-                          if (targets.isEmpty()) {
-                              markMessageStatus(outgoing.messageId, DeliveryStatus.DELIVERED)
-                          } else {
-                              val results = targets.map { peer ->
-                                  async {
-                                      networkEngine.sendTcpPacketToPeer(peer.ipAddress, peer.tcpPort, outgoing)
-                                  }
-                              }.awaitAll()
-                              val status = if (results.any { it }) DeliveryStatus.DELIVERED else DeliveryStatus.FAILED
-                              markMessageStatus(outgoing.messageId, status)
-                          }
-                      } else {
-                          val targetPeer = peerMap[channelId.lowercase()]
-                          if (targetPeer == null) {
-                              markMessageStatus(outgoing.messageId, DeliveryStatus.FAILED)
-                          } else {
-                              val delivered = networkEngine.sendTcpPacketToPeer(
-                                  targetIp = targetPeer.ipAddress,
-                                  targetPort = targetPeer.tcpPort,
-                                  message = outgoing
-                              )
-                              markMessageStatus(
-                                  outgoing.messageId,
-                                  if (delivered) DeliveryStatus.DELIVERED else DeliveryStatus.FAILED
-                              )
-                          }
-                      }
+                      val delivered = network.sendMessage(targetIp, LanConfig.TCP_MESSAGE_PORT, outgoing)
+                      val status = if (delivered) DeliveryStatus.DELIVERED else DeliveryStatus.FAILED
+                      updateMessageStatus(outgoing.messageId, status)
                   }
               }
 
-              private fun handleIncomingMessage(message: LanMessage) {
-                  val channelKey = if (message.recipientCustomId == LanConfig.GLOBAL_CHANNEL_ID) {
-                      LanConfig.GLOBAL_CHANNEL_ID
+              private fun handleIncomingMessage(msg: LanMessage, senderIp: String) {
+                  val peerId = msg.senderCustomId
+                  val peerName = msg.senderDisplayName.ifBlank { peerId }
+
+                  val currentActive = _uiState.value.activePeerId
+                  val isCurrentlyOpen = currentActive != null && currentActive.equals(peerId, ignoreCase = true)
+
+                  val history = repo.loadMessages(peerId).toMutableList()
+                  if (history.none { it.messageId == msg.messageId }) {
+                      history.add(msg)
+                      repo.saveMessages(peerId, history)
+                  }
+
+                  val currentThreads = _uiState.value.threads.toMutableList()
+                  val idx = currentThreads.indexOfFirst { it.peerCustomId.equals(peerId, ignoreCase = true) }
+                  if (idx >= 0) {
+                      val existing = currentThreads[idx]
+                      currentThreads[idx] = existing.copy(
+                          peerDisplayName = peerName,
+                          peerIp = senderIp,
+                          lastMessageText = msg.body,
+                          lastMessageTimeMs = msg.timestampMs,
+                          unreadCount = if (isCurrentlyOpen) 0 else existing.unreadCount + 1
+                      )
                   } else {
-                      message.senderCustomId
+                      currentThreads.add(
+                          0,
+                          ChatThread(
+                              peerCustomId = peerId,
+                              peerDisplayName = peerName,
+                              peerIp = senderIp,
+                              lastMessageText = msg.body,
+                              lastMessageTimeMs = msg.timestampMs,
+                              unreadCount = if (isCurrentlyOpen) 0 else 1
+                          )
+                      )
                   }
-                  appendMessageToChannel(channelKey, message)
-              }
+                  val sortedThreads = currentThreads.sortedByDescending { it.lastMessageTimeMs }
+                  repo.saveThreads(sortedThreads)
 
-              private fun appendMessageToChannel(channelId: String, message: LanMessage) {
                   _uiState.update { state ->
-                      val currentList = state.messagesByChannel[channelId].orEmpty()
-                      if (currentList.any { it.messageId == message.messageId }) {
-                          return@update state
-                      }
-                      val updatedMap = state.messagesByChannel.toMutableMap().apply {
-                          put(channelId, currentList + message)
-                      }
-                      val updatedUnread = state.unreadCounts.toMutableMap()
-                      if (!message.isOutgoing && state.activeChannelId != channelId) {
-                          updatedUnread[channelId] = (updatedUnread[channelId] ?: 0) + 1
-                      }
                       state.copy(
-                          messagesByChannel = updatedMap,
-                          unreadCounts = updatedUnread
+                          threads = sortedThreads,
+                          currentMessages = if (isCurrentlyOpen) history else state.currentMessages
                       )
                   }
               }
 
-              private fun markMessageStatus(messageId: String, status: DeliveryStatus) {
-                  _uiState.update { state ->
-                      val updatedMap = state.messagesByChannel.mapValues { (_, list) ->
-                          list.map { msg ->
-                              if (msg.messageId == messageId) msg.copy(deliveryStatus = status) else msg
-                          }
-                      }
-                      state.copy(messagesByChannel = updatedMap)
+              private fun updateMessageStatus(messageId: String, status: DeliveryStatus) {
+                  val active = _uiState.value.activePeerId ?: return
+                  val updated = _uiState.value.currentMessages.map { m ->
+                      if (m.messageId == messageId) m.copy(deliveryStatus = status) else m
                   }
+                  repo.saveMessages(active, updated)
+                  _uiState.update { it.copy(currentMessages = updated) }
               }
 
               override fun onCleared() {
                   super.onCleared()
-                  networkEngine.stop()
+                  network.stop()
               }
           }
 
-          class LanMessengerViewModelFactory(private val appContext: Context) : ViewModelProvider.Factory {
+          class ViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
               override fun <T : ViewModel> create(modelClass: Class<T>): T {
                   @Suppress("UNCHECKED_CAST")
-                  return LanMessengerViewModel(appContext) as T
+                  return MainViewModel(context) as T
               }
           }
+
+          // ============================================================================
+          // 5. ACTIVITY & IMESSAGE UI
+          // ============================================================================
 
           class MainActivity : ComponentActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   enableEdgeToEdge()
 
-                  val factory = LanMessengerViewModelFactory(applicationContext)
-                  val viewModel = ViewModelProvider(this, factory)[LanMessengerViewModel::class.java]
+                  val vm = ViewModelProvider(this, ViewModelFactory(applicationContext))[MainViewModel::class.java]
 
                   setContent {
-                      ChatBlackTheme {
-                          val state by viewModel.uiState.collectAsState()
-                          LanMessengerScreen(
-                              state = state,
-                              onSelectChannel = viewModel::selectChannel,
-                              onSendMessage = viewModel::sendMessage,
-                              onValidateCustomId = viewModel::validateCustomId,
-                              onUpdateIdentity = viewModel::updateIdentity,
-                              onAddManualPeer = viewModel::addManualPeer
-                          )
+                      IMessageTheme {
+                          val state by vm.uiState.collectAsState()
+
+                          if (!state.profile.isConfigured) {
+                              OnboardingScreen(
+                                  generatedId = state.profile.customId,
+                                  onComplete = vm::completeOnboarding
+                              )
+                          } else if (state.activePeerId != null) {
+                              val activeThread = state.threads.firstOrNull { it.peerCustomId.equals(state.activePeerId, ignoreCase = true) }
+                              ConversationScreen(
+                                  myProfile = state.profile,
+                                  thread = activeThread ?: ChatThread(state.activePeerId!!, state.activePeerId!!),
+                                  messages = state.currentMessages,
+                                  onBack = vm::closeChat,
+                                  onSendMessage = vm::sendMessage
+                              )
+                          } else {
+                              HomeScreen(
+                                  state = state,
+                                  onOpenChat = vm::openChat
+                              )
+                          }
                       }
                   }
               }
           }
 
           @Composable
-          fun ChatBlackTheme(content: @Composable () -> Unit) {
+          fun IMessageTheme(content: @Composable () -> Unit) {
               val colorScheme = darkColorScheme(
-                  primary = Color(0xFF10B981),
-                  onPrimary = Color(0xFF000000),
-                  primaryContainer = Color(0xFF064E3B),
-                  onPrimaryContainer = Color(0xFFD1FAE5),
-                  secondary = Color(0xFF38BDF8),
-                  background = Color(0xFF000000),
-                  surface = Color(0xFF09090B),
-                  surfaceVariant = Color(0xFF18181B),
-                  onBackground = Color(0xFFFAFAFA),
-                  onSurface = Color(0xFFF4F4F5),
-                  onSurfaceVariant = Color(0xFFA1A1AA)
+                  primary = Color(0xFF007AFF),        // Apple iMessage Blue
+                  onPrimary = Color.White,
+                  background = Color(0xFF000000),     // True OLED Black
+                  surface = Color(0xFF1C1C1E),        // Apple System Card Dark
+                  surfaceVariant = Color(0xFF2C2C2E), // Apple Bubble Incoming Dark
+                  onBackground = Color(0xFFFFFFFF),
+                  onSurface = Color(0xFFFFFFFF),
+                  onSurfaceVariant = Color(0xFF8E8E93)
               )
               MaterialTheme(
                   colorScheme = colorScheme,
@@ -948,434 +999,675 @@ jobs:
               )
           }
 
-          @OptIn(ExperimentalMaterial3Api::class)
-          @Composable
-          fun LanMessengerScreen(
-              state: LanMessengerUiState,
-              onSelectChannel: (String) -> Unit,
-              onSendMessage: (String) -> Unit,
-              onValidateCustomId: (String) -> String?,
-              onUpdateIdentity: (String, String, Long) -> Unit,
-              onAddManualPeer: (String, String) -> Unit
-          ) {
-              var showIdentityDialog by remember { mutableStateOf(false) }
-              var showManualPeerDialog by remember { mutableStateOf(false) }
-              var draftMessage by remember { mutableStateOf("") }
-              val focusManager = LocalFocusManager.current
+          // ============================================================================
+          // ONBOARDING SCREEN (First Time Welcome & Display Name Setup)
+          // ============================================================================
 
-              val activeMessages = state.messagesByChannel[state.activeChannelId].orEmpty()
+          @Composable
+          fun OnboardingScreen(
+              generatedId: String,
+              onComplete: (String, Long) -> Unit
+          ) {
+              var nameInput by remember { mutableStateOf("") }
+              var chosenColor by remember { mutableLongStateOf(ChatHistoryRepository.AVATAR_COLORS.first()) }
+              val clipboardManager = LocalClipboardManager.current
+
+              Surface(
+                  modifier = Modifier.fillMaxSize(),
+                  color = MaterialTheme.colorScheme.background
+              ) {
+                  Column(
+                      modifier = Modifier
+                          .fillMaxSize()
+                          .padding(horizontal = 24.dp)
+                          .statusBarsPadding()
+                          .navigationBarsPadding(),
+                      verticalArrangement = Arrangement.Center,
+                      horizontalAlignment = Alignment.CenterHorizontally
+                  ) {
+                      Box(
+                          modifier = Modifier
+                              .size(88.dp)
+                              .clip(CircleShape)
+                              .background(Color(chosenColor)),
+                          contentAlignment = Alignment.Center
+                      ) {
+                          Text(
+                              text = if (nameInput.isNotBlank()) nameInput.take(1).uppercase() else "i",
+                              color = Color.White,
+                              fontSize = 38.sp,
+                              fontWeight = FontWeight.Bold
+                          )
+                      }
+
+                      Spacer(modifier = Modifier.height(20.dp))
+
+                      Text(
+                          text = "Welcome to Messages",
+                          fontSize = 26.sp,
+                          fontWeight = FontWeight.Bold,
+                          color = Color.White
+                      )
+                      Spacer(modifier = Modifier.height(8.dp))
+                      Text(
+                          text = "Set up your profile to chat privately across the local Wi-Fi network without internet.",
+                          fontSize = 14.sp,
+                          textAlign = TextAlign.Center,
+                          color = Color(0xFF8E8E93)
+                      )
+
+                      Spacer(modifier = Modifier.height(28.dp))
+
+                      Surface(
+                          color = Color(0xFF1C1C1E),
+                          shape = RoundedCornerShape(16.dp),
+                          modifier = Modifier.fillMaxWidth()
+                      ) {
+                          Column(modifier = Modifier.padding(16.dp)) {
+                              Text(
+                                  text = "YOUR LAN ID (PERMANENT)",
+                                  fontSize = 11.sp,
+                                  fontWeight = FontWeight.SemiBold,
+                                  color = Color(0xFF8E8E93)
+                              )
+                              Spacer(modifier = Modifier.height(4.dp))
+                              Row(
+                                  verticalAlignment = Alignment.CenterVertically,
+                                  horizontalArrangement = Arrangement.SpaceBetween,
+                                  modifier = Modifier.fillMaxWidth()
+                              ) {
+                                  Text(
+                                      text = "@$generatedId",
+                                      fontSize = 20.sp,
+                                      fontFamily = FontFamily.Monospace,
+                                      fontWeight = FontWeight.Bold,
+                                      color = Color(0xFF007AFF)
+                                  )
+                                  IconButton(onClick = {
+                                      clipboardManager.setText(AnnotatedString(generatedId))
+                                  }) {
+                                      Icon(
+                                          imageVector = Icons.Default.ContentCopy,
+                                          contentDescription = "Copy ID",
+                                          tint = Color(0xFF007AFF)
+                                      )
+                                  }
+                              }
+                              Text(
+                                  text = "People contact you using this unique ID.",
+                                  fontSize = 12.sp,
+                                  color = Color(0xFF8E8E93)
+                              )
+                          }
+                      }
+
+                      Spacer(modifier = Modifier.height(20.dp))
+
+                      OutlinedTextField(
+                          value = nameInput,
+                          onValueChange = { nameInput = it },
+                          label = { Text("Display Name (e.g. Alex)") },
+                          singleLine = true,
+                          shape = RoundedCornerShape(14.dp),
+                          modifier = Modifier.fillMaxWidth(),
+                          colors = OutlinedTextFieldDefaults.colors(
+                              focusedBorderColor = Color(0xFF007AFF),
+                              unfocusedBorderColor = Color(0xFF38383A)
+                          )
+                      )
+
+                      Spacer(modifier = Modifier.height(18.dp))
+
+                      Row(
+                          horizontalArrangement = Arrangement.spacedBy(12.dp),
+                          verticalAlignment = Alignment.CenterVertically
+                      ) {
+                          ChatHistoryRepository.AVATAR_COLORS.forEach { colorHex ->
+                              val isSelected = chosenColor == colorHex
+                              Box(
+                                  modifier = Modifier
+                                      .size(32.dp)
+                                      .clip(CircleShape)
+                                      .background(Color(colorHex))
+                                      .border(
+                                          width = if (isSelected) 3.dp else 0.dp,
+                                          color = if (isSelected) Color.White else Color.Transparent,
+                                          shape = CircleShape
+                                      )
+                                      .clickable { chosenColor = colorHex }
+                              )
+                          }
+                      }
+
+                      Spacer(modifier = Modifier.height(32.dp))
+
+                      Button(
+                          onClick = { onComplete(nameInput, chosenColor) },
+                          enabled = nameInput.isNotBlank(),
+                          shape = RoundedCornerShape(14.dp),
+                          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF)),
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .height(50.dp)
+                      ) {
+                          Text(
+                              text = "Get Started",
+                              fontSize = 16.sp,
+                              fontWeight = FontWeight.SemiBold,
+                              color = Color.White
+                          )
+                      }
+                  }
+              }
+          }
+
+          // ============================================================================
+          // HOME SCREEN (iOS Messages Style Thread List & New Chat Button)
+          // ============================================================================
+
+          @Composable
+          fun HomeScreen(
+              state: AppUiState,
+              onOpenChat: (String, String?, String?) -> Unit
+          ) {
+              var showNewChatDialog by remember { mutableStateOf(false) }
+              var showProfileInfo by remember { mutableStateOf(false) }
+              val clipboardManager = LocalClipboardManager.current
+
+              Scaffold(
+                  containerColor = Color.Black,
+                  topBar = {
+                      Column(
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .background(Color.Black)
+                              .statusBarsPadding()
+                              .padding(horizontal = 16.dp, vertical = 8.dp)
+                      ) {
+                          Row(
+                              modifier = Modifier.fillMaxWidth(),
+                              horizontalArrangement = Arrangement.SpaceBetween,
+                              verticalAlignment = Alignment.CenterVertically
+                          ) {
+                              Row(
+                                  verticalAlignment = Alignment.CenterVertically,
+                                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                  modifier = Modifier
+                                      .clip(RoundedCornerShape(20.dp))
+                                      .clickable { showProfileInfo = true }
+                                      .padding(horizontal = 6.dp, vertical = 4.dp)
+                              ) {
+                                  Box(
+                                      modifier = Modifier
+                                          .size(30.dp)
+                                          .clip(CircleShape)
+                                          .background(Color(state.profile.avatarColorHex)),
+                                      contentAlignment = Alignment.Center
+                                  ) {
+                                      Text(
+                                          text = state.profile.displayName.take(1).uppercase(),
+                                          color = Color.White,
+                                          fontSize = 14.sp,
+                                          fontWeight = FontWeight.Bold
+                                      )
+                                  }
+                                  Text(
+                                      text = "@${state.profile.customId}",
+                                      fontSize = 13.sp,
+                                      fontFamily = FontFamily.Monospace,
+                                      color = Color(0xFF007AFF)
+                                  )
+                              }
+
+                              IconButton(
+                                  onClick = { showNewChatDialog = true },
+                                  modifier = Modifier
+                                      .size(36.dp)
+                                      .clip(CircleShape)
+                                      .background(Color(0xFF1C1C1E))
+                              ) {
+                                  Icon(
+                                      imageVector = Icons.Default.Edit,
+                                      contentDescription = "New Chat",
+                                      tint = Color(0xFF007AFF),
+                                      modifier = Modifier.size(18.dp)
+                                  )
+                              }
+                          }
+
+                          Spacer(modifier = Modifier.height(10.dp))
+
+                          Text(
+                              text = "Messages",
+                              fontSize = 34.sp,
+                              fontWeight = FontWeight.Bold,
+                              color = Color.White
+                          )
+
+                          Text(
+                              text = "LAN IP: ${state.localIp} • ${state.discoveredPeers.size} peer(s) nearby",
+                              fontSize = 11.sp,
+                              fontFamily = FontFamily.Monospace,
+                              color = Color(0xFF8E8E93)
+                          )
+                      }
+                  }
+              ) { innerPadding ->
+                  Box(
+                      modifier = Modifier
+                          .fillMaxSize()
+                          .padding(innerPadding)
+                          .background(Color.Black)
+                  ) {
+                      if (state.threads.isEmpty()) {
+                          Column(
+                              modifier = Modifier
+                                  .fillMaxSize()
+                                  .padding(32.dp),
+                              verticalArrangement = Arrangement.Center,
+                              horizontalAlignment = Alignment.CenterHorizontally
+                          ) {
+                              Icon(
+                                  imageVector = Icons.Default.ChatBubbleOutline,
+                                  contentDescription = null,
+                                  tint = Color(0xFF3A3A3C),
+                                  modifier = Modifier.size(64.dp)
+                              )
+                              Spacer(modifier = Modifier.height(16.dp))
+                              Text(
+                                  text = "No Conversations Yet",
+                                  fontSize = 18.sp,
+                                  fontWeight = FontWeight.Bold,
+                                  color = Color.White
+                              )
+                              Spacer(modifier = Modifier.height(6.dp))
+                              Text(
+                                  text = "Tap the compose button in the top right to start a chat with someone using their LAN User ID.",
+                                  fontSize = 13.sp,
+                                  textAlign = TextAlign.Center,
+                                  color = Color(0xFF8E8E93)
+                              )
+                          }
+                      } else {
+                          LazyColumn(
+                              modifier = Modifier.fillMaxSize(),
+                              contentPadding = PaddingValues(bottom = 32.dp)
+                          ) {
+                              items(state.threads, key = { it.peerCustomId }) { thread ->
+                                  ThreadItemRow(
+                                      thread = thread,
+                                      onClick = {
+                                          onOpenChat(thread.peerCustomId, thread.peerDisplayName, thread.peerIp)
+                                      }
+                                  )
+                              }
+                          }
+                      }
+                  }
+              }
+
+              if (showNewChatDialog) {
+                  NewChatDialog(
+                      nearbyPeers = state.discoveredPeers,
+                      onDismiss = { showNewChatDialog = false },
+                      onSelect = { id, name, ip ->
+                          showNewChatDialog = false
+                          onOpenChat(id, name, ip)
+                      }
+                  )
+              }
+
+              if (showProfileInfo) {
+                  AlertDialog(
+                      onDismissRequest = { showProfileInfo = false },
+                      containerColor = Color(0xFF1C1C1E),
+                      title = {
+                          Text("Your Profile", fontWeight = FontWeight.Bold, color = Color.White)
+                      },
+                      text = {
+                          Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                              Text(
+                                  text = "Name: ${state.profile.displayName}",
+                                  color = Color.White,
+                                  fontSize = 16.sp
+                              )
+                              Row(
+                                  verticalAlignment = Alignment.CenterVertically,
+                                  horizontalArrangement = Arrangement.SpaceBetween,
+                                  modifier = Modifier.fillMaxWidth()
+                              ) {
+                                  Text(
+                                      text = "User ID: @${state.profile.customId}",
+                                      fontFamily = FontFamily.Monospace,
+                                      color = Color(0xFF007AFF),
+                                      fontSize = 16.sp
+                                  )
+                                  IconButton(onClick = {
+                                      clipboardManager.setText(AnnotatedString(state.profile.customId))
+                                  }) {
+                                      Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF007AFF))
+                                  }
+                              }
+                              Text(
+                                  text = "Give your User ID (@${state.profile.customId}) to people so they can message you on this Wi-Fi network.",
+                                  color = Color(0xFF8E8E93),
+                                  fontSize = 12.sp
+                              )
+                          }
+                      },
+                      confirmButton = {
+                          TextButton(onClick = { showProfileInfo = false }) {
+                              Text("Done", color = Color(0xFF007AFF))
+                          }
+                      }
+                  )
+              }
+          }
+
+          @Composable
+          fun ThreadItemRow(
+              thread: ChatThread,
+              onClick: () -> Unit
+          ) {
+              val timeFormatter = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+
+              Row(
+                  modifier = Modifier
+                      .fillMaxWidth()
+                      .clickable(onClick = onClick)
+                      .padding(horizontal = 16.dp, vertical = 12.dp),
+                  verticalAlignment = Alignment.CenterVertically
+              ) {
+                  Box(
+                      modifier = Modifier
+                          .size(10.dp)
+                          .clip(CircleShape)
+                          .background(if (thread.unreadCount > 0) Color(0xFF007AFF) else Color.Transparent)
+                  )
+
+                  Spacer(modifier = Modifier.width(8.dp))
+
+                  Box(
+                      modifier = Modifier
+                          .size(48.dp)
+                          .clip(CircleShape)
+                          .background(Color(thread.avatarColorHex)),
+                      contentAlignment = Alignment.Center
+                  ) {
+                      Text(
+                          text = thread.peerDisplayName.take(1).uppercase(),
+                          color = Color.White,
+                          fontSize = 20.sp,
+                          fontWeight = FontWeight.Bold
+                      )
+                  }
+
+                  Spacer(modifier = Modifier.width(12.dp))
+
+                  Column(modifier = Modifier.weight(1f)) {
+                      Row(
+                          modifier = Modifier.fillMaxWidth(),
+                          horizontalArrangement = Arrangement.SpaceBetween,
+                          verticalAlignment = Alignment.CenterVertically
+                      ) {
+                          Text(
+                              text = thread.peerDisplayName,
+                              fontSize = 16.sp,
+                              fontWeight = FontWeight.SemiBold,
+                              color = Color.White,
+                              maxLines = 1,
+                              overflow = TextOverflow.Ellipsis
+                          )
+                          Text(
+                              text = timeFormatter.format(Date(thread.lastMessageTimeMs)),
+                              fontSize = 12.sp,
+                              color = Color(0xFF8E8E93)
+                          )
+                      }
+
+                      Spacer(modifier = Modifier.height(2.dp))
+
+                      Row(
+                          modifier = Modifier.fillMaxWidth(),
+                          horizontalArrangement = Arrangement.SpaceBetween,
+                          verticalAlignment = Alignment.CenterVertically
+                      ) {
+                          Text(
+                              text = if (thread.lastMessageText.isNotBlank()) thread.lastMessageText else "@${thread.peerCustomId}",
+                              fontSize = 13.sp,
+                              color = if (thread.unreadCount > 0) Color.White else Color(0xFF8E8E93),
+                              fontWeight = if (thread.unreadCount > 0) FontWeight.Medium else FontWeight.Normal,
+                              maxLines = 2,
+                              overflow = TextOverflow.Ellipsis,
+                              modifier = Modifier.weight(1f)
+                          )
+                          if (thread.unreadCount > 0) {
+                              Surface(
+                                  color = Color(0xFF007AFF),
+                                  shape = CircleShape,
+                                  modifier = Modifier.padding(start = 6.dp)
+                              ) {
+                                  Text(
+                                      text = thread.unreadCount.toString(),
+                                      color = Color.White,
+                                      fontSize = 10.sp,
+                                      fontWeight = FontWeight.Bold,
+                                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                  )
+                              }
+                          }
+                      }
+                  }
+              }
+
+              HorizontalDivider(
+                  color = Color(0xFF1C1C1E),
+                  thickness = 0.5.dp,
+                  modifier = Modifier.padding(start = 76.dp)
+              )
+          }
+
+          // ============================================================================
+          // CONVERSATION SCREEN (Authentic Apple iMessage Chat UI)
+          // ============================================================================
+
+          @Composable
+          fun ConversationScreen(
+              myProfile: UserProfile,
+              thread: ChatThread,
+              messages: List<LanMessage>,
+              onBack: () -> Unit,
+              onSendMessage: (String) -> Unit
+          ) {
+              var inputDraft by remember { mutableStateOf("") }
               val listState = rememberLazyListState()
 
-              LaunchedEffect(activeMessages.size, state.activeChannelId) {
-                  if (activeMessages.isNotEmpty()) {
-                      listState.animateScrollToItem(activeMessages.size - 1)
+              BackHandler { onBack() }
+
+              LaunchedEffect(messages.size) {
+                  if (messages.isNotEmpty()) {
+                      listState.animateScrollToItem(messages.size - 1)
                   }
               }
 
               Scaffold(
-                  modifier = Modifier.fillMaxSize(),
+                  containerColor = Color.Black,
                   topBar = {
-                      TopAppBar(
-                          colors = TopAppBarDefaults.topAppBarColors(
-                              containerColor = MaterialTheme.colorScheme.surface
-                          ),
-                          title = {
-                              Column {
-                                  Row(
-                                      verticalAlignment = Alignment.CenterVertically,
-                                      horizontalArrangement = Arrangement.spacedBy(8.dp)
+                      Column(
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .background(Color(0xFF161618))
+                              .statusBarsPadding()
+                      ) {
+                          Row(
+                              modifier = Modifier
+                                  .fillMaxWidth()
+                                  .padding(horizontal = 8.dp, vertical = 4.dp),
+                              verticalAlignment = Alignment.CenterVertically
+                          ) {
+                              Row(
+                                  verticalAlignment = Alignment.CenterVertically,
+                                  modifier = Modifier
+                                      .clickable(onClick = onBack)
+                                      .padding(horizontal = 4.dp, vertical = 6.dp)
+                              ) {
+                                  Icon(
+                                      imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                      contentDescription = "Back",
+                                      tint = Color(0xFF007AFF),
+                                      modifier = Modifier.size(20.dp)
+                                  )
+                                  Spacer(modifier = Modifier.width(4.dp))
+                                  Text(
+                                      text = "Messages",
+                                      color = Color(0xFF007AFF),
+                                      fontSize = 16.sp
+                                  )
+                              }
+
+                              Column(
+                                  modifier = Modifier.weight(1f),
+                                  horizontalAlignment = Alignment.CenterHorizontally
+                              ) {
+                                  Box(
+                                      modifier = Modifier
+                                          .size(28.dp)
+                                          .clip(CircleShape)
+                                          .background(Color(thread.avatarColorHex)),
+                                      contentAlignment = Alignment.Center
                                   ) {
                                       Text(
-                                          text = "Chat Black",
-                                          fontWeight = FontWeight.Bold,
-                                          fontSize = 18.sp
+                                          text = thread.peerDisplayName.take(1).uppercase(),
+                                          color = Color.White,
+                                          fontSize = 12.sp,
+                                          fontWeight = FontWeight.Bold
                                       )
-                                      Surface(
-                                          shape = RoundedCornerShape(50),
-                                          color = Color(state.userProfile.avatarColorHex).copy(alpha = 0.2f),
-                                          modifier = Modifier
-                                              .border(
-                                                  1.dp,
-                                                  Color(state.userProfile.avatarColorHex),
-                                                  RoundedCornerShape(50)
-                                              )
-                                              .clickable { showIdentityDialog = true }
-                                      ) {
-                                          Row(
-                                              modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                              verticalAlignment = Alignment.CenterVertically,
-                                              horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                          ) {
-                                              Text(
-                                                  text = "@${state.userProfile.customId}",
-                                                  fontSize = 12.sp,
-                                                  fontFamily = FontFamily.Monospace,
-                                                  fontWeight = FontWeight.SemiBold,
-                                                  color = Color(0xFFD1FAE5)
-                                              )
-                                              Icon(
-                                                  imageVector = Icons.Default.Edit,
-                                                  contentDescription = "Edit Custom ID",
-                                                  modifier = Modifier.size(12.dp),
-                                                  tint = Color(0xFF10B981)
-                                              )
-                                          }
-                                      }
                                   }
                                   Text(
-                                      text = "LAN IP: ${state.localIpAddress} • ${state.peers.size} peer(s) online",
-                                      fontSize = 11.sp,
-                                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                      fontFamily = FontFamily.Monospace
+                                      text = thread.peerDisplayName,
+                                      fontSize = 13.sp,
+                                      fontWeight = FontWeight.SemiBold,
+                                      color = Color.White,
+                                      maxLines = 1
+                                  )
+                                  Text(
+                                      text = "@${thread.peerCustomId}",
+                                      fontSize = 10.sp,
+                                      fontFamily = FontFamily.Monospace,
+                                      color = Color(0xFF8E8E93)
                                   )
                               }
-                          },
-                          actions = {
-                              IconButton(onClick = { showManualPeerDialog = true }) {
-                                  Icon(
-                                      imageVector = Icons.Default.PersonAdd,
-                                      contentDescription = "Add Peer by IP & Custom ID"
-                                  )
-                              }
-                              IconButton(onClick = { showIdentityDialog = true }) {
-                                  Icon(
-                                      imageVector = Icons.Default.Badge,
-                                      contentDescription = "Customize User ID"
-                                  )
-                              }
+
+                              Spacer(modifier = Modifier.width(60.dp))
                           }
-                      )
+                          HorizontalDivider(color = Color(0xFF2C2C2E), thickness = 0.5.dp)
+                      }
                   }
               ) { innerPadding ->
                   Column(
                       modifier = Modifier
                           .fillMaxSize()
                           .padding(innerPadding)
-                          .background(MaterialTheme.colorScheme.background)
+                          .background(Color.Black)
                   ) {
-                      AnimatedVisibility(visible = state.collisionBanner != null) {
-                          Surface(
-                              color = Color(0xFF7F1D1D),
-                              modifier = Modifier
-                                  .fillMaxWidth()
-                                  .clickable { showIdentityDialog = true }
+                      Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                          LazyColumn(
+                              state = listState,
+                              modifier = Modifier.fillMaxSize(),
+                              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                              verticalArrangement = Arrangement.spacedBy(6.dp)
                           ) {
-                              Row(
-                                  modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                                  verticalAlignment = Alignment.CenterVertically,
-                                  horizontalArrangement = Arrangement.spacedBy(10.dp)
-                              ) {
-                                  Icon(
-                                      imageVector = Icons.Default.Warning,
-                                      contentDescription = null,
-                                      tint = Color(0xFFFCA5A5)
-                                  )
-                                  Text(
-                                      text = state.collisionBanner.orEmpty(),
-                                      fontSize = 12.sp,
-                                      color = Color(0xFFFECACA),
-                                      modifier = Modifier.weight(1f)
-                                  )
-                              }
-                          }
-                      }
-
-                      ChannelSelectorRow(
-                          activeChannelId = state.activeChannelId,
-                          peers = state.peers,
-                          unreadCounts = state.unreadCounts,
-                          onSelectChannel = onSelectChannel
-                      )
-
-                      ActiveChannelBanner(
-                          activeChannelId = state.activeChannelId,
-                          activePeer = state.peers.firstOrNull {
-                              it.customId.equals(state.activeChannelId, ignoreCase = true)
-                          }
-                      )
-
-                      Box(
-                          modifier = Modifier
-                              .weight(1f)
-                              .fillMaxWidth()
-                      ) {
-                          if (activeMessages.isEmpty()) {
-                              EmptyChannelPlaceholder(
-                                  activeChannelId = state.activeChannelId,
-                                  ownCustomId = state.userProfile.customId
-                              )
-                          } else {
-                              LazyColumn(
-                                  state = listState,
-                                  modifier = Modifier.fillMaxSize(),
-                                  contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-                                  verticalArrangement = Arrangement.spacedBy(8.dp)
-                              ) {
-                                  items(activeMessages, key = { it.messageId }) { msg ->
-                                      MessageBubble(message = msg)
-                                  }
+                              items(messages, key = { it.messageId }) { msg ->
+                                  AppleMessageBubble(msg = msg)
                               }
                           }
                       }
 
                       Surface(
-                          color = MaterialTheme.colorScheme.surface,
-                          tonalElevation = 4.dp
+                          color = Color(0xFF161618),
+                          modifier = Modifier.fillMaxWidth()
                       ) {
                           Row(
                               modifier = Modifier
                                   .fillMaxWidth()
                                   .navigationBarsPadding()
                                   .imePadding()
-                                  .padding(horizontal = 12.dp, vertical = 8.dp),
-                              verticalAlignment = Alignment.CenterVertically,
-                              horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                  .padding(horizontal = 10.dp, vertical = 8.dp),
+                              verticalAlignment = Alignment.CenterVertically
                           ) {
-                              OutlinedTextField(
-                                  value = draftMessage,
-                                  onValueChange = { draftMessage = it },
-                                  modifier = Modifier.weight(1f),
-                                  placeholder = {
-                                      val targetLabel = if (state.activeChannelId == LanConfig.GLOBAL_CHANNEL_ID) {
-                                          "Message #lan-global as @${state.userProfile.customId}..."
-                                      } else {
-                                          "Direct message @${state.activeChannelId}..."
-                                      }
-                                      Text(text = targetLabel, fontSize = 13.sp)
-                                  },
-                                  maxLines = 4,
+                              Surface(
+                                  color = Color(0xFF2C2C2E),
                                   shape = RoundedCornerShape(22.dp),
-                                  keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                                  keyboardActions = KeyboardActions(
-                                      onSend = {
-                                          if (draftMessage.isNotBlank()) {
-                                              onSendMessage(draftMessage)
-                                              draftMessage = ""
-                                              focusManager.clearFocus()
+                                  modifier = Modifier.weight(1f)
+                              ) {
+                                  Row(
+                                      modifier = Modifier
+                                          .fillMaxWidth()
+                                          .padding(horizontal = 14.dp, vertical = 8.dp),
+                                      verticalAlignment = Alignment.CenterVertically
+                                  ) {
+                                      BasicTextField(
+                                          value = inputDraft,
+                                          onValueChange = { inputDraft = it },
+                                          textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
+                                          cursorBrush = SolidColor(Color(0xFF007AFF)),
+                                          modifier = Modifier.weight(1f),
+                                          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                                          keyboardActions = KeyboardActions(
+                                              onSend = {
+                                                  if (inputDraft.isNotBlank()) {
+                                                      onSendMessage(inputDraft)
+                                                      inputDraft = ""
+                                                  }
+                                              }
+                                          ),
+                                          decorationBox = { innerTextField ->
+                                              if (inputDraft.isEmpty()) {
+                                                  Text(
+                                                      text = "iMessage",
+                                                      color = Color(0xFF8E8E93),
+                                                      fontSize = 16.sp
+                                                  )
+                                              }
+                                              innerTextField()
                                           }
-                                      }
-                                  )
-                              )
+                                      )
+                                  }
+                              }
 
-                              FilledIconButton(
-                                  onClick = {
-                                      if (draftMessage.isNotBlank()) {
-                                          onSendMessage(draftMessage)
-                                          draftMessage = ""
-                                      }
-                                  },
-                                  enabled = draftMessage.isNotBlank(),
-                                  shape = CircleShape
+                              Spacer(modifier = Modifier.width(8.dp))
+
+                              Box(
+                                  modifier = Modifier
+                                      .size(34.dp)
+                                      .clip(CircleShape)
+                                      .background(if (inputDraft.isNotBlank()) Color(0xFF007AFF) else Color(0xFF3A3A3C))
+                                      .clickable(enabled = inputDraft.isNotBlank()) {
+                                          if (inputDraft.isNotBlank()) {
+                                              onSendMessage(inputDraft)
+                                              inputDraft = ""
+                                          }
+                                      },
+                                  contentAlignment = Alignment.Center
                               ) {
                                   Icon(
-                                      imageVector = Icons.AutoMirrored.Filled.Send,
-                                      contentDescription = "Send LAN Message"
+                                      imageVector = Icons.Default.ArrowUpward,
+                                      contentDescription = "Send",
+                                      tint = Color.White,
+                                      modifier = Modifier.size(18.dp)
                                   )
                               }
                           }
                       }
                   }
               }
-
-              if (showIdentityDialog) {
-                  EditCustomIdDialog(
-                      currentProfile = state.userProfile,
-                      onValidate = onValidateCustomId,
-                      onDismiss = { showIdentityDialog = false },
-                      onSave = { newId, newName, newColor ->
-                          onUpdateIdentity(newId, newName, newColor)
-                          showIdentityDialog = false
-                      }
-                  )
-              }
-
-              if (showManualPeerDialog) {
-                  AddManualPeerDialog(
-                      onDismiss = { showManualPeerDialog = false },
-                      onAdd = { customId, ip ->
-                          onAddManualPeer(customId, ip)
-                          showManualPeerDialog = false
-                      }
-                  )
-              }
           }
 
           @Composable
-          private fun ChannelSelectorRow(
-              activeChannelId: String,
-              peers: List<LanPeer>,
-              unreadCounts: Map<String, Int>,
-              onSelectChannel: (String) -> Unit
-          ) {
-              Surface(
-                  color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                  modifier = Modifier.fillMaxWidth()
-              ) {
-                  LazyRow(
-                      contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-                      horizontalArrangement = Arrangement.spacedBy(8.dp),
-                      verticalAlignment = Alignment.CenterVertically
-                  ) {
-                      item {
-                          val isSelected = activeChannelId == LanConfig.GLOBAL_CHANNEL_ID
-                          val unread = unreadCounts[LanConfig.GLOBAL_CHANNEL_ID] ?: 0
-                          FilterChip(
-                              selected = isSelected,
-                              onClick = { onSelectChannel(LanConfig.GLOBAL_CHANNEL_ID) },
-                              label = {
-                                  Row(
-                                      verticalAlignment = Alignment.CenterVertically,
-                                      horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                  ) {
-                                      Icon(
-                                          imageVector = Icons.Default.WifiTethering,
-                                          contentDescription = null,
-                                          modifier = Modifier.size(16.dp)
-                                      )
-                                      Text(
-                                          text = "LAN Broadcast (#all)",
-                                          fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                      )
-                                      if (unread > 0) {
-                                          UnreadCountBadge(count = unread)
-                                      }
-                                  }
-                              }
-                          )
-                      }
-
-                      items(peers, key = { it.customId }) { peer ->
-                          val isSelected = activeChannelId.equals(peer.customId, ignoreCase = true)
-                          val unread = unreadCounts[peer.customId] ?: 0
-                          FilterChip(
-                              selected = isSelected,
-                              onClick = { onSelectChannel(peer.customId) },
-                              label = {
-                                  Row(
-                                      verticalAlignment = Alignment.CenterVertically,
-                                      horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                  ) {
-                                      Box(
-                                          modifier = Modifier
-                                              .size(8.dp)
-                                              .clip(CircleShape)
-                                              .background(
-                                                  if (peer.isOnline) Color(0xFF10B981) else Color(0xFF71717A)
-                                              )
-                                      )
-                                      Text(
-                                          text = "@${peer.customId}",
-                                          fontFamily = FontFamily.Monospace,
-                                          fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                      )
-                                      if (unread > 0) {
-                                          UnreadCountBadge(count = unread)
-                                      }
-                                  }
-                              }
-                          )
-                      }
-                  }
-              }
-          }
-
-          @Composable
-          private fun ActiveChannelBanner(
-              activeChannelId: String,
-              activePeer: LanPeer?
-          ) {
-              Surface(
-                  color = MaterialTheme.colorScheme.surface,
-                  modifier = Modifier.fillMaxWidth()
-              ) {
-                  Row(
-                      modifier = Modifier
-                          .fillMaxWidth()
-                          .padding(horizontal = 16.dp, vertical = 8.dp),
-                      verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.SpaceBetween
-                  ) {
-                      if (activeChannelId == LanConfig.GLOBAL_CHANNEL_ID) {
-                          Text(
-                              text = "Channel: #lan-global (Broadcasts over TCP to all discovered LAN peers)",
-                              fontSize = 12.sp,
-                              color = MaterialTheme.colorScheme.onSurfaceVariant
-                          )
-                      } else if (activePeer != null) {
-                          Text(
-                              text = "Direct Peer: ${activePeer.displayName} (@${activePeer.customId})",
-                              fontSize = 12.sp,
-                              fontWeight = FontWeight.SemiBold,
-                              color = MaterialTheme.colorScheme.onSurface
-                          )
-                          Text(
-                              text = "${activePeer.ipAddress}:${activePeer.tcpPort}",
-                              fontSize = 11.sp,
-                              fontFamily = FontFamily.Monospace,
-                              color = Color(0xFF10B981)
-                          )
-                      } else {
-                          Text(
-                              text = "Direct Peer: @$activeChannelId (Waiting for LAN heartbeat...)",
-                              fontSize = 12.sp,
-                              color = MaterialTheme.colorScheme.onSurfaceVariant
-                          )
-                      }
-                  }
-              }
-          }
-
-          @Composable
-          private fun EmptyChannelPlaceholder(
-              activeChannelId: String,
-              ownCustomId: String
-          ) {
-              Column(
-                  modifier = Modifier
-                      .fillMaxSize()
-                      .padding(32.dp),
-                  verticalArrangement = Arrangement.Center,
-                  horizontalAlignment = Alignment.CenterHorizontally
-              ) {
-                  Icon(
-                      imageVector = Icons.Default.Forum,
-                      contentDescription = null,
-                      modifier = Modifier.size(48.dp),
-                      tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-                  )
-                  Spacer(modifier = Modifier.height(12.dp))
-                  Text(
-                      text = if (activeChannelId == LanConfig.GLOBAL_CHANNEL_ID) {
-                          "Chat Black LAN Room Ready"
-                      } else {
-                          "Direct Chat with @$activeChannelId"
-                      },
-                      fontWeight = FontWeight.Bold,
-                      fontSize = 16.sp
-                  )
-                  Spacer(modifier = Modifier.height(6.dp))
-                  Text(
-                      text = "Your active LAN handle is @$ownCustomId. Devices on the same Wi-Fi/LAN subnet discover each other automatically via UDP port ${LanConfig.UDP_DISCOVERY_PORT} and exchange messages peer-to-peer over TCP port ${LanConfig.TCP_MESSAGE_PORT}.",
-                      fontSize = 13.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
-                  )
-              }
-          }
-
-          @Composable
-          private fun MessageBubble(message: LanMessage) {
-              val timeFormatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
-              val alignment = if (message.isOutgoing) Alignment.End else Alignment.Start
-              val bubbleColor = if (message.isOutgoing) {
-                  MaterialTheme.colorScheme.primaryContainer
-              } else {
-                  MaterialTheme.colorScheme.surfaceVariant
-              }
-              val textColor = if (message.isOutgoing) {
-                  MaterialTheme.colorScheme.onPrimaryContainer
-              } else {
-                  MaterialTheme.colorScheme.onSurface
-              }
+          fun AppleMessageBubble(msg: LanMessage) {
+              val alignment = if (msg.isOutgoing) Alignment.End else Alignment.Start
+              val bubbleColor = if (msg.isOutgoing) Color(0xFF007AFF) else Color(0xFF26252A)
+              val textColor = Color.White
 
               Column(
                   modifier = Modifier.fillMaxWidth(),
@@ -1384,224 +1676,156 @@ jobs:
                   Surface(
                       color = bubbleColor,
                       shape = RoundedCornerShape(
-                          topStart = 16.dp,
-                          topEnd = 16.dp,
-                          bottomStart = if (message.isOutgoing) 16.dp else 4.dp,
-                          bottomEnd = if (message.isOutgoing) 4.dp else 16.dp
+                          topStart = 18.dp,
+                          topEnd = 18.dp,
+                          bottomStart = if (msg.isOutgoing) 18.dp else 4.dp,
+                          bottomEnd = if (msg.isOutgoing) 4.dp else 18.dp
                       ),
-                      modifier = Modifier.widthIn(max = 310.dp)
+                      modifier = Modifier.widthIn(max = 280.dp)
                   ) {
-                      Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                          Row(
-                              verticalAlignment = Alignment.CenterVertically,
-                              horizontalArrangement = Arrangement.spacedBy(6.dp)
-                          ) {
-                              Text(
-                                  text = "@${message.senderCustomId}",
-                                  fontSize = 11.sp,
-                                  fontFamily = FontFamily.Monospace,
-                                  fontWeight = FontWeight.Bold,
-                                  color = if (message.isOutgoing) Color(0xFF6EE7B7) else Color(0xFF38BDF8)
-                              )
-                              Text(
-                                  text = "(${message.senderIp})",
-                                  fontSize = 10.sp,
-                                  fontFamily = FontFamily.Monospace,
-                                  color = textColor.copy(alpha = 0.65f),
-                                  maxLines = 1,
-                                  overflow = TextOverflow.Ellipsis
-                              )
-                          }
-                          Spacer(modifier = Modifier.height(4.dp))
-                          Text(
-                              text = message.body,
-                              fontSize = 14.sp,
-                              color = textColor
-                          )
-                          Spacer(modifier = Modifier.height(4.dp))
-                          Row(
-                              modifier = Modifier.align(Alignment.End),
-                              verticalAlignment = Alignment.CenterVertically,
-                              horizontalArrangement = Arrangement.spacedBy(4.dp)
-                          ) {
-                              Text(
-                                  text = timeFormatter.format(Date(message.timestampMs)),
-                                  fontSize = 10.sp,
-                                  color = textColor.copy(alpha = 0.7f)
-                              )
-                              if (message.isOutgoing) {
-                                  val statusLabel = when (message.deliveryStatus) {
-                                      DeliveryStatus.SENDING -> "•••"
-                                      DeliveryStatus.DELIVERED -> "✓ ACK"
-                                      DeliveryStatus.FAILED -> "! Offline"
-                                  }
-                                  Text(
-                                      text = statusLabel,
-                                      fontSize = 10.sp,
-                                      fontWeight = FontWeight.SemiBold,
-                                      color = when (message.deliveryStatus) {
-                                          DeliveryStatus.SENDING -> textColor.copy(alpha = 0.7f)
-                                          DeliveryStatus.DELIVERED -> Color(0xFF6EE7B7)
-                                          DeliveryStatus.FAILED -> Color(0xFFFCA5A5)
-                                      }
-                                  )
-                              }
-                          }
+                      Text(
+                          text = msg.body,
+                          color = textColor,
+                          fontSize = 15.sp,
+                          modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
+                      )
+                  }
+
+                  if (msg.isOutgoing) {
+                      Spacer(modifier = Modifier.height(2.dp))
+                      val label = when (msg.deliveryStatus) {
+                          DeliveryStatus.SENDING -> "Sending..."
+                          DeliveryStatus.DELIVERED -> "Delivered"
+                          DeliveryStatus.FAILED -> "Not Delivered"
                       }
+                      Text(
+                          text = label,
+                          fontSize = 10.sp,
+                          color = if (msg.deliveryStatus == DeliveryStatus.FAILED) Color(0xFFFF453A) else Color(0xFF8E8E93),
+                          modifier = Modifier.padding(end = 4.dp)
+                      )
                   }
               }
           }
 
-          @Composable
-          private fun UnreadCountBadge(count: Int) {
-              Surface(
-                  color = Color(0xFFEF4444),
-                  shape = CircleShape
-              ) {
-                  Text(
-                      text = count.toString(),
-                      color = Color.White,
-                      fontSize = 10.sp,
-                      fontWeight = FontWeight.Bold,
-                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                  )
-              }
-          }
+          // ============================================================================
+          // NEW CHAT MODAL (Enter ID or Select from Nearby LAN Peers)
+          // ============================================================================
 
           @Composable
-          private fun EditCustomIdDialog(
-              currentProfile: UserProfile,
-              onValidate: (String) -> String?,
+          fun NewChatDialog(
+              nearbyPeers: List<LanPeer>,
               onDismiss: () -> Unit,
-              onSave: (String, String, Long) -> Unit
+              onSelect: (String, String?, String?) -> Unit
           ) {
-              var customIdInput by remember { mutableStateOf(currentProfile.customId) }
-              var displayNameInput by remember { mutableStateOf(currentProfile.displayName) }
-              var selectedColor by remember { mutableLongStateOf(currentProfile.avatarColorHex) }
-              val validationError = onValidate(customIdInput)
+              var targetIdInput by remember { mutableStateOf("") }
+              var optionalIpInput by remember { mutableStateOf("") }
 
               AlertDialog(
                   onDismissRequest = onDismiss,
+                  containerColor = Color(0xFF1C1C1E),
                   title = {
-                      Text(text = "Custom LAN User ID", fontWeight = FontWeight.Bold)
+                      Text(
+                          text = "New Message",
+                          fontWeight = FontWeight.Bold,
+                          color = Color.White
+                      )
                   },
                   text = {
                       Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                           Text(
-                              text = "Set your unique handle on the local network. Peers can message you directly using this @ID.",
-                              fontSize = 13.sp,
-                              color = MaterialTheme.colorScheme.onSurfaceVariant
-                          )
-                          OutlinedTextField(
-                              value = customIdInput,
-                              onValueChange = { customIdInput = it },
-                              label = { Text("Custom User ID (e.g. alex_dev)") },
-                              prefix = { Text("@") },
-                              singleLine = true,
-                              isError = validationError != null,
-                              supportingText = {
-                                  if (validationError != null) {
-                                      Text(text = validationError, color = MaterialTheme.colorScheme.error)
-                                  } else {
-                                      Text("3-24 chars: letters, numbers, '_' or '-'")
-                                  }
-                              }
-                          )
-                          OutlinedTextField(
-                              value = displayNameInput,
-                              onValueChange = { displayNameInput = it },
-                              label = { Text("Display Name") },
-                              singleLine = true
-                          )
-                          Text(
-                              text = "Badge Color",
+                              text = "To: Enter contact's LAN User ID",
                               fontSize = 12.sp,
-                              fontWeight = FontWeight.Medium
+                              color = Color(0xFF8E8E93)
                           )
-                          Row(
-                              horizontalArrangement = Arrangement.spacedBy(8.dp),
-                              modifier = Modifier.fillMaxWidth()
-                          ) {
-                              UserIdentityRepository.AVATAR_PALETTE.forEach { colorHex ->
-                                  val isChosen = selectedColor == colorHex
-                                  Box(
+                          OutlinedTextField(
+                              value = targetIdInput,
+                              onValueChange = { targetIdInput = it },
+                              label = { Text("Contact User ID (e.g. cb_1234)") },
+                              prefix = { Text("@", color = Color(0xFF007AFF)) },
+                              singleLine = true,
+                              colors = OutlinedTextFieldDefaults.colors(
+                                  focusedBorderColor = Color(0xFF007AFF),
+                                  unfocusedBorderColor = Color(0xFF38383A)
+                              )
+                          )
+                          OutlinedTextField(
+                              value = optionalIpInput,
+                              onValueChange = { optionalIpInput = it },
+                              label = { Text("LAN IP (Optional if on same Wi-Fi)") },
+                              singleLine = true,
+                              colors = OutlinedTextFieldDefaults.colors(
+                                  focusedBorderColor = Color(0xFF007AFF),
+                                  unfocusedBorderColor = Color(0xFF38383A)
+                              )
+                          )
+
+                          if (nearbyPeers.isNotEmpty()) {
+                              Spacer(modifier = Modifier.height(4.dp))
+                              Text(
+                                  text = "DISCOVERED NEARBY ON WI-FI",
+                                  fontSize = 11.sp,
+                                  fontWeight = FontWeight.Bold,
+                                  color = Color(0xFF8E8E93)
+                              )
+                              nearbyPeers.forEach { peer ->
+                                  Row(
                                       modifier = Modifier
-                                          .size(28.dp)
-                                          .clip(CircleShape)
-                                          .background(Color(colorHex))
-                                          .border(
-                                              width = if (isChosen) 2.5.dp else 0.dp,
-                                              color = if (isChosen) Color.White else Color.Transparent,
-                                              shape = CircleShape
+                                          .fillMaxWidth()
+                                          .clip(RoundedCornerShape(8.dp))
+                                          .clickable {
+                                              onSelect(peer.customId, peer.displayName, peer.ipAddress)
+                                          }
+                                          .padding(vertical = 6.dp, horizontal = 4.dp),
+                                      verticalAlignment = Alignment.CenterVertically
+                                  ) {
+                                      Box(
+                                          modifier = Modifier
+                                              .size(26.dp)
+                                              .clip(CircleShape)
+                                              .background(Color(peer.avatarColorHex)),
+                                          contentAlignment = Alignment.Center
+                                      ) {
+                                          Text(
+                                              text = peer.displayName.take(1).uppercase(),
+                                              color = Color.White,
+                                              fontSize = 11.sp
                                           )
-                                          .clickable { selectedColor = colorHex }
-                                  )
+                                      }
+                                      Spacer(modifier = Modifier.width(8.dp))
+                                      Column {
+                                          Text(
+                                              text = peer.displayName,
+                                              fontSize = 13.sp,
+                                              color = Color.White,
+                                              fontWeight = FontWeight.SemiBold
+                                          )
+                                          Text(
+                                              text = "@${peer.customId} (${peer.ipAddress})",
+                                              fontSize = 11.sp,
+                                              fontFamily = FontFamily.Monospace,
+                                              color = Color(0xFF8E8E93)
+                                          )
+                                      }
+                                  }
                               }
                           }
                       }
                   },
                   confirmButton = {
                       Button(
-                          onClick = { onSave(customIdInput, displayNameInput, selectedColor) },
-                          enabled = validationError == null
+                          onClick = {
+                              onSelect(targetIdInput.trim(), null, optionalIpInput.trim().ifBlank { null })
+                          },
+                          enabled = targetIdInput.isNotBlank(),
+                          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF))
                       ) {
-                          Text("Save & Broadcast ID")
+                          Text("Chat", color = Color.White)
                       }
                   },
                   dismissButton = {
                       TextButton(onClick = onDismiss) {
-                          Text("Cancel")
-                      }
-                  }
-              )
-          }
-
-          @Composable
-          private fun AddManualPeerDialog(
-              onDismiss: () -> Unit,
-              onAdd: (String, String) -> Unit
-          ) {
-              var peerCustomId by remember { mutableStateOf("") }
-              var peerIpAddress by remember { mutableStateOf("") }
-
-              AlertDialog(
-                  onDismissRequest = onDismiss,
-                  title = {
-                      Text(text = "Add LAN Peer Manually", fontWeight = FontWeight.Bold)
-                  },
-                  text = {
-                      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                          Text(
-                              text = "If your Wi-Fi router blocks UDP broadcast discovery, add a peer directly by their Custom ID and LAN IPv4 address.",
-                              fontSize = 13.sp,
-                              color = MaterialTheme.colorScheme.onSurfaceVariant
-                          )
-                          OutlinedTextField(
-                              value = peerCustomId,
-                              onValueChange = { peerCustomId = it },
-                              label = { Text("Peer Custom ID") },
-                              prefix = { Text("@") },
-                              singleLine = true
-                          )
-                          OutlinedTextField(
-                              value = peerIpAddress,
-                              onValueChange = { peerIpAddress = it },
-                              label = { Text("Peer LAN IPv4 (e.g. 192.168.1.42)") },
-                              singleLine = true
-                          )
-                      }
-                  },
-                  confirmButton = {
-                      Button(
-                          onClick = { onAdd(peerCustomId, peerIpAddress) },
-                          enabled = peerCustomId.isNotBlank() && peerIpAddress.isNotBlank()
-                      ) {
-                          Text("Connect Peer")
-                      }
-                  },
-                  dismissButton = {
-                      TextButton(onClick = onDismiss) {
-                          Text("Cancel")
+                          Text("Cancel", color = Color(0xFF8E8E93))
                       }
                   }
               )
