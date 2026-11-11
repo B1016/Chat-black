@@ -22,9 +22,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Accept Android Licenses
+      - name: Configure Android SDK Licenses
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+          mkdir -p "$ANDROID_HOME/licenses"
+          printf "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n859f317696f67ef3d7f30a50a5560e7834b43903\n" > "$ANDROID_HOME/licenses/android-sdk-license"
+          printf "\n84831b9409646a918e30573bab4c9c91346d8abd\n" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -38,11 +40,18 @@ jobs:
 
           cat << 'EOF' > settings.gradle.kts
           pluginManagement {
-              repositories { google(); mavenCentral(); gradlePluginPortal() }
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
           }
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories { google(); mavenCentral() }
+              repositories {
+                  google()
+                  mavenCentral()
+              }
           }
           rootProject.name = "BGRAM"
           include(":app")
@@ -56,9 +65,8 @@ jobs:
 
           cat << 'EOF' > build.gradle.kts
           plugins {
-              id("com.android.application") version "8.7.2" apply false
-              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
-              id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
           }
           EOF
 
@@ -66,34 +74,41 @@ jobs:
           plugins {
               id("com.android.application")
               id("org.jetbrains.kotlin.android")
-              id("org.jetbrains.kotlin.plugin.compose")
           }
           android {
               namespace = "com.bgram.lan"
-              compileSdk = 35
+              compileSdk = 34
               defaultConfig {
                   applicationId = "com.bgram.lan"
                   minSdk = 26
-                  targetSdk = 35
-                  versionCode = 2
-                  versionName = "2.0"
+                  targetSdk = 34
+                  versionCode = 3
+                  versionName = "3.0"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
               }
-              kotlinOptions { jvmTarget = "17" }
-              buildFeatures { compose = true }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+              buildFeatures {
+                  compose = true
+              }
+              composeOptions {
+                  kotlinCompilerExtensionVersion = "1.5.14"
+              }
           }
           dependencies {
-              val bom = platform("androidx.compose:compose-bom:2024.10.01")
+              val bom = platform("androidx.compose:compose-bom:2024.06.00")
               implementation(bom)
-              implementation("androidx.core:core-ktx:1.15.0")
-              implementation("androidx.activity:activity-compose:1.9.3")
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.activity:activity-compose:1.9.0")
               implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.ui:ui-graphics")
               implementation("androidx.compose.material3:material3")
               implementation("androidx.compose.material:material-icons-extended")
-              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
           }
           EOF
 
@@ -113,7 +128,6 @@ jobs:
           EOF
 
           cat << 'EOF' > app/src/main/AndroidManifest.xml
-          <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -122,7 +136,7 @@ jobs:
               <uses-permission android:name="android.permission.RECORD_AUDIO" />
               <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
               <application
                   android:allowBackup="true"
@@ -137,12 +151,11 @@ jobs:
                       android:name=".BgramDaemonService"
                       android:enabled="true"
                       android:exported="false"
-                      android:foregroundServiceType="specialUse" />
+                      android:foregroundServiceType="dataSync" />
 
                   <activity
                       android:name=".MainActivity"
                       android:exported="true"
-                      android:launchMode="singleTop"
                       android:windowSoftInputMode="adjustResize">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -154,24 +167,53 @@ jobs:
           EOF
 
           cat << 'EOF' > app/src/main/java/com/bgram/lan/BgramCore.kt
+          @file:Suppress("DEPRECATION")
           package com.bgram.lan
 
-          import android.app.*
-          import android.content.*
-          import android.graphics.*
-          import android.media.*
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.app.Service
+          import android.content.Context
+          import android.content.Intent
+          import android.content.SharedPreferences
+          import android.content.pm.ServiceInfo
+          import android.graphics.Bitmap
+          import android.graphics.BitmapFactory
+          import android.media.MediaPlayer
+          import android.media.MediaRecorder
           import android.net.Uri
           import android.net.wifi.WifiManager
-          import android.os.*
+          import android.os.Build
+          import android.os.IBinder
           import android.util.Base64
           import androidx.core.app.NotificationCompat
-          import kotlinx.coroutines.*
-          import kotlinx.coroutines.flow.*
+          import kotlinx.coroutines.CoroutineScope
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.SupervisorJob
+          import kotlinx.coroutines.delay
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.isActive
+          import kotlinx.coroutines.launch
           import org.json.JSONArray
           import org.json.JSONObject
-          import java.io.*
-          import java.net.*
-          import java.util.*
+          import java.io.BufferedReader
+          import java.io.ByteArrayOutputStream
+          import java.io.File
+          import java.io.InputStreamReader
+          import java.io.OutputStreamWriter
+          import java.io.PrintWriter
+          import java.net.DatagramPacket
+          import java.net.DatagramSocket
+          import java.net.Inet4Address
+          import java.net.InetAddress
+          import java.net.InetSocketAddress
+          import java.net.MulticastSocket
+          import java.net.NetworkInterface
+          import java.net.ServerSocket
+          import java.net.Socket
+          import java.util.Collections
+          import java.util.UUID
           import java.util.concurrent.ConcurrentHashMap
           import kotlin.random.Random
 
@@ -423,7 +465,7 @@ jobs:
                   messages.value = messages.value.toMutableMap().apply { put(cid, nextList) }
                   persistMessages(cid, nextList)
 
-                  val preview = if (item.voiceB64.isNotBlank()) "🎤 Voice message (${item.voiceSec}s)" else item.text
+                  val preview = if (item.voiceB64.isNotBlank()) "Voice message (${item.voiceSec}s)" else item.text
                   val isOpen = activeConvId.value == cid
                   val updatedConvs = conversations.value.map { c ->
                       if (c.convId == cid) {
@@ -445,7 +487,7 @@ jobs:
               }
 
               private fun transmitTcp(ip: String, conv: ConversationMeta, item: ChatItem): Boolean {
-                  return runCatching {
+                  return try {
                       Socket().use { s ->
                           s.connect(InetSocketAddress(ip, TCP_PORT), 3500)
                           s.soTimeout = 3500
@@ -468,20 +510,26 @@ jobs:
                           out.println(pkt.toString())
                           inp.readLine() == "ACK"
                       }
-                  }.getOrDefault(false)
+                  } catch (e: Exception) {
+                      false
+                  }
               }
 
               private fun startNetworking(ctx: Context) {
-                  runCatching {
+                  try {
                       val wm = ctx.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-                      wm?.createMulticastLock("bgram_lock")?.apply { setReferenceCounted(true); acquire() }
-                  }
+                      wm?.createMulticastLock("bgram_lock")?.apply {
+                          setReferenceCounted(true)
+                          acquire()
+                      }
+                  } catch (_: Exception) {}
+
                   scope.launch {
                       while (isActive) {
                           val ip = resolveLanIp()
                           localIp.value = ip
                           if (ip != "0.0.0.0" && account.value.ready) {
-                              runCatching {
+                              try {
                                   val data = JSONObject().apply {
                                       put("uid", account.value.uid.lowercase())
                                       put("name", account.value.displayName)
@@ -493,17 +541,20 @@ jobs:
                                       ds.send(DatagramPacket(data, data.size, InetAddress.getByName("255.255.255.255"), UDP_PORT))
                                       ds.send(DatagramPacket(data, data.size, InetAddress.getByName(MCAST), UDP_PORT))
                                   }
-                              }
+                              } catch (_: Exception) {}
                           }
                           delay(3500)
                       }
                   }
+
                   scope.launch {
-                      runCatching {
+                      try {
                           val ms = MulticastSocket(UDP_PORT).apply {
                               reuseAddress = true
                               broadcast = true
-                              runCatching { @Suppress("DEPRECATION") joinGroup(InetAddress.getByName(MCAST)) }
+                              try {
+                                  joinGroup(InetAddress.getByName(MCAST))
+                              } catch (_: Exception) {}
                           }
                           val buf = ByteArray(65500)
                           while (isActive) {
@@ -523,16 +574,20 @@ jobs:
                                   syncPeerMetadata(node)
                               }
                           }
-                      }
+                      } catch (_: Exception) {}
                   }
+
                   scope.launch {
-                      runCatching {
-                          val ss = ServerSocket().apply { reuseAddress = true; bind(InetSocketAddress(TCP_PORT)) }
+                      try {
+                          val ss = ServerSocket().apply {
+                              reuseAddress = true
+                              bind(InetSocketAddress(TCP_PORT))
+                          }
                           while (isActive) {
                               val client = ss.accept()
                               launch { handleClient(ctx, client) }
                           }
-                      }
+                      } catch (_: Exception) {}
                   }
               }
 
@@ -553,58 +608,61 @@ jobs:
               }
 
               private fun handleClient(ctx: Context, s: Socket) {
-                  s.use { sock ->
-                      runCatching {
+                  try {
+                      s.use { sock ->
                           val remoteIp = sock.inetAddress.hostAddress ?: ""
-                          val line = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.UTF_8)).readLine() ?: return
-                          val out = PrintWriter(OutputStreamWriter(sock.getOutputStream(), Charsets.UTF_8), true)
-                          val j = JSONObject(line)
+                          val reader = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.UTF_8))
+                          val line = reader.readLine()
+                          if (line != null) {
+                              val out = PrintWriter(OutputStreamWriter(sock.getOutputStream(), Charsets.UTF_8), true)
+                              val j = JSONObject(line)
 
-                          val isGroup = j.optBoolean("isGroup", false)
-                          val senderId = j.getString("senderId").lowercase()
-                          val senderName = j.optString("senderName", senderId)
-                          val senderAvatar = j.optString("senderAvatar", "")
-                          val cid = if (isGroup) j.getString("convId") else senderId
-                          val title = if (isGroup) j.optString("convTitle", "Group") else senderName
-                          val members = j.optString("membersCsv", senderId)
+                              val isGroup = j.optBoolean("isGroup", false)
+                              val senderId = j.getString("senderId").lowercase()
+                              val senderName = j.optString("senderName", senderId)
+                              val senderAvatar = j.optString("senderAvatar", "")
+                              val cid = if (isGroup) j.getString("convId") else senderId
+                              val title = if (isGroup) j.optString("convTitle", "Group") else senderName
+                              val members = j.optString("membersCsv", senderId)
 
-                          peerCache[senderId] = PeerNode(senderId, senderName, remoteIp, senderAvatar)
-                          peers.value = peerCache.values.sortedBy { it.name.lowercase() }
+                              peerCache[senderId] = PeerNode(senderId, senderName, remoteIp, senderAvatar)
+                              peers.value = peerCache.values.sortedBy { it.name.lowercase() }
 
-                          if (conversations.value.none { it.convId == cid }) {
-                              conversations.value = listOf(
-                                  ConversationMeta(
-                                      convId = cid,
-                                      title = title,
-                                      isGroup = isGroup,
-                                      membersCsv = members,
-                                      peerIp = remoteIp,
-                                      avatarB64 = if (isGroup) "" else senderAvatar
-                                  )
-                              ) + conversations.value
-                          }
+                              if (conversations.value.none { it.convId == cid }) {
+                                  conversations.value = listOf(
+                                      ConversationMeta(
+                                          convId = cid,
+                                          title = title,
+                                          isGroup = isGroup,
+                                          membersCsv = members,
+                                          peerIp = remoteIp,
+                                          avatarB64 = if (isGroup) "" else senderAvatar
+                                      )
+                                  ) + conversations.value
+                              }
 
-                          val msg = ChatItem(
-                              id = j.getString("id"),
-                              convId = cid,
-                              senderId = senderId,
-                              senderName = senderName,
-                              text = j.optString("text", ""),
-                              voiceB64 = j.optString("voiceB64", ""),
-                              voiceSec = j.optInt("voiceSec", 0),
-                              ts = j.optLong("ts", System.currentTimeMillis()),
-                              mine = false,
-                              ack = true
-                          )
-                          appendMessage(cid, msg, isIncoming = true)
-                          out.println("ACK")
+                              val msg = ChatItem(
+                                  id = j.getString("id"),
+                                  convId = cid,
+                                  senderId = senderId,
+                                  senderName = senderName,
+                                  text = j.optString("text", ""),
+                                  voiceB64 = j.optString("voiceB64", ""),
+                                  voiceSec = j.optInt("voiceSec", 0),
+                                  ts = j.optLong("ts", System.currentTimeMillis()),
+                                  mine = false,
+                                  ack = true
+                              )
+                              appendMessage(cid, msg, isIncoming = true)
+                              out.println("ACK")
 
-                          if (activeConvId.value != cid) {
-                              val bodyText = if (msg.voiceB64.isNotBlank()) "🎤 Sent a voice message" else msg.text
-                              postMsgNotification(ctx, cid, if (isGroup) "$title ($senderName)" else senderName, bodyText)
+                              if (activeConvId.value != cid) {
+                                  val bodyText = if (msg.voiceB64.isNotBlank()) "Sent a voice message" else msg.text
+                                  postMsgNotification(ctx, cid, if (isGroup) "$title ($senderName)" else senderName, bodyText)
+                              }
                           }
                       }
-                  }
+                  } catch (_: Exception) {}
               }
 
               private fun postMsgNotification(ctx: Context, cid: String, senderTitle: String, body: String) {
@@ -614,7 +672,7 @@ jobs:
                       NotificationChannel(chId, "BGRAM Messages", NotificationManager.IMPORTANCE_HIGH)
                   )
                   val intent = Intent(ctx, MainActivity::class.java).apply {
-                      flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                      flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                       putExtra("open_conv_id", cid)
                   }
                   val pi = PendingIntent.getActivity(
@@ -633,7 +691,7 @@ jobs:
               }
 
               fun resolveLanIp(): String {
-                  runCatching {
+                  try {
                       for (nif in Collections.list(NetworkInterface.getNetworkInterfaces())) {
                           if (!nif.isUp || nif.isLoopback) continue
                           for (ia in nif.interfaceAddresses) {
@@ -643,7 +701,7 @@ jobs:
                               }
                           }
                       }
-                  }
+                  } catch (_: Exception) {}
                   return "0.0.0.0"
               }
           }
@@ -663,7 +721,11 @@ jobs:
                       .setContentText("Listening for messages & voice notes in background")
                       .setOngoing(true)
                       .build()
-                  startForeground(101, notif)
+                  if (Build.VERSION.SDK_INT >= 29) {
+                      startForeground(101, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                  } else {
+                      startForeground(101, notif)
+                  }
               }
               override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
               override fun onBind(intent: Intent?): IBinder? = null
@@ -676,11 +738,11 @@ jobs:
               private var player: MediaPlayer? = null
 
               fun startRecording(ctx: Context): Boolean {
-                  return runCatching {
+                  return try {
                       stopRecording()
                       val f = File(ctx.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
                       outFile = f
-                      val r = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(ctx) else @Suppress("DEPRECATION") MediaRecorder()
+                      val r = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(ctx) else MediaRecorder()
                       r.setAudioSource(MediaRecorder.AudioSource.MIC)
                       r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                       r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
@@ -692,24 +754,33 @@ jobs:
                       recorder = r
                       startMs = System.currentTimeMillis()
                       true
-                  }.getOrDefault(false)
+                  } catch (e: Exception) {
+                      false
+                  }
               }
 
               fun stopRecording(): Pair<String, Int>? {
                   val r = recorder ?: return null
                   recorder = null
-                  return runCatching {
+                  return try {
                       r.stop()
                       r.release()
                       val sec = ((System.currentTimeMillis() - startMs) / 1000L).toInt().coerceAtLeast(1)
-                      val bytes = outFile?.readBytes() ?: return null
-                      outFile?.delete()
-                      Pair(Base64.encodeToString(bytes, Base64.NO_WRAP), sec)
-                  }.getOrNull()
+                      val f = outFile
+                      if (f != null && f.exists()) {
+                          val bytes = f.readBytes()
+                          f.delete()
+                          Pair(Base64.encodeToString(bytes, Base64.NO_WRAP), sec)
+                      } else {
+                          null
+                      }
+                  } catch (e: Exception) {
+                      null
+                  }
               }
 
               fun playVoiceB64(ctx: Context, b64: String) {
-                  runCatching {
+                  try {
                       player?.release()
                       val bytes = Base64.decode(b64, Base64.DEFAULT)
                       val tmp = File(ctx.cacheDir, "play_${System.currentTimeMillis()}.m4a")
@@ -723,27 +794,35 @@ jobs:
                               tmp.delete()
                           }
                       }
-                  }
+                  } catch (_: Exception) {}
               }
 
               fun encodeUriToAvatarB64(ctx: Context, uri: Uri): String {
-                  return runCatching {
-                      val stream = ctx.contentResolver.openInputStream(uri) ?: return ""
-                      val orig = BitmapFactory.decodeStream(stream)
-                      stream.close()
-                      val scaled = Bitmap.createScaledBitmap(orig, 96, 96, true)
-                      val bos = ByteArrayOutputStream()
-                      scaled.compress(Bitmap.CompressFormat.JPEG, 75, bos)
-                      Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP)
-                  }.getOrDefault("")
+                  return try {
+                      val stream = ctx.contentResolver.openInputStream(uri)
+                      if (stream != null) {
+                          val orig = BitmapFactory.decodeStream(stream)
+                          stream.close()
+                          val scaled = Bitmap.createScaledBitmap(orig, 96, 96, true)
+                          val bos = ByteArrayOutputStream()
+                          scaled.compress(Bitmap.CompressFormat.JPEG, 75, bos)
+                          Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP)
+                      } else {
+                          ""
+                      }
+                  } catch (e: Exception) {
+                      ""
+                  }
               }
 
               fun decodeAvatar(b64: String): Bitmap? {
                   if (b64.isBlank()) return null
-                  return runCatching {
+                  return try {
                       val bytes = Base64.decode(b64, Base64.DEFAULT)
                       BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                  }.getOrNull()
+                  } catch (e: Exception) {
+                      null
+                  }
               }
           }
           EOF
@@ -753,41 +832,100 @@ jobs:
 
           import android.Manifest
           import android.content.Intent
-          import android.os.*
+          import android.os.Build
+          import android.os.Bundle
           import androidx.activity.ComponentActivity
-          import androidx.activity.compose.*
+          import androidx.activity.compose.BackHandler
+          import androidx.activity.compose.rememberLauncherForActivityResult
+          import androidx.activity.compose.setContent
           import androidx.activity.enableEdgeToEdge
           import androidx.activity.result.contract.ActivityResultContracts
-          import androidx.compose.foundation.*
-          import androidx.compose.foundation.layout.*
-          import androidx.compose.foundation.lazy.*
-          import androidx.compose.foundation.shape.*
+          import androidx.compose.foundation.Image
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.Arrangement
+          import androidx.compose.foundation.layout.Box
+          import androidx.compose.foundation.layout.Column
+          import androidx.compose.foundation.layout.PaddingValues
+          import androidx.compose.foundation.layout.Row
+          import androidx.compose.foundation.layout.Spacer
+          import androidx.compose.foundation.layout.fillMaxSize
+          import androidx.compose.foundation.layout.fillMaxWidth
+          import androidx.compose.foundation.layout.height
+          import androidx.compose.foundation.layout.imePadding
+          import androidx.compose.foundation.layout.navigationBarsPadding
+          import androidx.compose.foundation.layout.padding
+          import androidx.compose.foundation.layout.size
+          import androidx.compose.foundation.layout.statusBarsPadding
+          import androidx.compose.foundation.layout.width
+          import androidx.compose.foundation.layout.widthIn
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.lazy.rememberLazyListState
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
           import androidx.compose.foundation.text.BasicTextField
           import androidx.compose.material.icons.Icons
           import androidx.compose.material.icons.automirrored.filled.ArrowBack
-          import androidx.compose.material.icons.filled.*
-          import androidx.compose.material3.*
-          import androidx.compose.runtime.*
-          import androidx.compose.ui.*
+          import androidx.compose.material.icons.filled.ArrowUpward
+          import androidx.compose.material.icons.filled.ContentCopy
+          import androidx.compose.material.icons.filled.Edit
+          import androidx.compose.material.icons.filled.GroupAdd
+          import androidx.compose.material.icons.filled.Groups
+          import androidx.compose.material.icons.filled.Mic
+          import androidx.compose.material.icons.filled.PlayArrow
+          import androidx.compose.material.icons.filled.Stop
+          import androidx.compose.material3.AlertDialog
+          import androidx.compose.material3.Button
+          import androidx.compose.material3.ButtonDefaults
+          import androidx.compose.material3.Checkbox
+          import androidx.compose.material3.HorizontalDivider
+          import androidx.compose.material3.Icon
+          import androidx.compose.material3.IconButton
+          import androidx.compose.material3.MaterialTheme
+          import androidx.compose.material3.OutlinedTextField
+          import androidx.compose.material3.Scaffold
+          import androidx.compose.material3.Surface
+          import androidx.compose.material3.Text
+          import androidx.compose.material3.TextButton
+          import androidx.compose.material3.darkColorScheme
+          import androidx.compose.runtime.Composable
+          import androidx.compose.runtime.LaunchedEffect
+          import androidx.compose.runtime.collectAsState
+          import androidx.compose.runtime.getValue
+          import androidx.compose.runtime.mutableStateListOf
+          import androidx.compose.runtime.mutableStateOf
+          import androidx.compose.runtime.remember
+          import androidx.compose.runtime.setValue
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
           import androidx.compose.ui.draw.clip
-          import androidx.compose.ui.graphics.*
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.SolidColor
+          import androidx.compose.ui.graphics.asImageBitmap
           import androidx.compose.ui.layout.ContentScale
-          import androidx.compose.ui.platform.*
-          import androidx.compose.ui.text.*
-          import androidx.compose.ui.text.font.*
-          import androidx.compose.ui.text.style.*
-          import androidx.compose.ui.unit.*
+          import androidx.compose.ui.platform.LocalClipboardManager
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.text.AnnotatedString
+          import androidx.compose.ui.text.TextStyle
+          import androidx.compose.ui.text.font.FontFamily
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.Dp
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
           import java.text.SimpleDateFormat
-          import java.util.*
+          import java.util.Date
+          import java.util.Locale
 
           class MainActivity : ComponentActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   enableEdgeToEdge()
                   BgramHub.init(applicationContext)
-                  runCatching {
+                  try {
                       startForegroundService(Intent(this, BgramDaemonService::class.java))
-                  }
+                  } catch (_: Exception) {}
                   intent?.getStringExtra("open_conv_id")?.let { BgramHub.activeConvId.value = it }
 
                   setContent {
@@ -820,11 +958,6 @@ jobs:
                           }
                       }
                   }
-              }
-
-              override fun onNewIntent(intent: Intent) {
-                  super.onNewIntent(intent)
-                  intent.getStringExtra("open_conv_id")?.let { BgramHub.activeConvId.value = it }
               }
           }
 
@@ -1301,7 +1434,7 @@ jobs:
 
       - name: Compile BGRAM Debug APK
         run: |
-          gradle assembleDebug --no-daemon --stacktrace
+          gradle assembleDebug --no-daemon
           cp app/build/outputs/apk/debug/app-debug.apk BGRAM-LAN.apk
 
       - name: Upload BGRAM APK Artifact
