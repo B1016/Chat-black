@@ -1,4 +1,4 @@
-name: Build Chat Black APK
+name: Build BGRAM APK
 
 on:
   push:
@@ -8,59 +8,49 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-android-apk:
-    name: Generate & Compile Chat Black APK
+  build-apk:
+    name: Build BGRAM LAN Messenger
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # GitHub Actions ubuntu-latest already has Android SDK pre-installed at $ANDROID_HOME.
-      # Accepting licenses directly avoids third-party action crashes.
-      - name: Accept Android SDK Licenses
+      - name: Accept Android Licenses
         run: |
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
 
-      - name: Setup Gradle 8.9
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Generate Chat Black Android Project
+      - name: Generate BGRAM Project
         run: |
-          mkdir -p app/src/main/java/com/chatblack/messenger
-          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/java/com/bgram/lan
+          mkdir -p app/src/main/res/drawable
 
           cat << 'EOF' > settings.gradle.kts
           pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
           }
           dependencyResolutionManagement {
               repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
+              repositories { google(); mavenCentral() }
           }
-          rootProject.name = "ChatBlack"
+          rootProject.name = "BGRAM"
           include(":app")
           EOF
 
           cat << 'EOF' > gradle.properties
           org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
           android.useAndroidX=true
-          kotlin.code.style=official
           android.nonTransitiveRClass=true
           EOF
 
@@ -78,85 +68,81 @@ jobs:
               id("org.jetbrains.kotlin.android")
               id("org.jetbrains.kotlin.plugin.compose")
           }
-
           android {
-              namespace = "com.chatblack.messenger"
+              namespace = "com.bgram.lan"
               compileSdk = 35
-
               defaultConfig {
-                  applicationId = "com.chatblack.messenger"
+                  applicationId = "com.bgram.lan"
                   minSdk = 26
                   targetSdk = 35
-                  versionCode = 1
-                  versionName = "1.0.0"
-
-                  vectorDrawables {
-                      useSupportLibrary = true
-                  }
+                  versionCode = 2
+                  versionName = "2.0"
               }
-
-              buildTypes {
-                  release {
-                      isMinifyEnabled = false
-                  }
-                  debug {
-                      applicationIdSuffix = ".debug"
-                      versionNameSuffix = "-debug"
-                  }
-              }
-
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
               }
-
-              kotlinOptions {
-                  jvmTarget = "17"
-              }
-
-              buildFeatures {
-                  compose = true
-              }
+              kotlinOptions { jvmTarget = "17" }
+              buildFeatures { compose = true }
           }
-
           dependencies {
-              val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
-              implementation(composeBom)
-
+              val bom = platform("androidx.compose:compose-bom:2024.10.01")
+              implementation(bom)
               implementation("androidx.core:core-ktx:1.15.0")
-              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-              implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
               implementation("androidx.activity:activity-compose:1.9.3")
-
               implementation("androidx.compose.ui:ui")
-              implementation("androidx.compose.ui:ui-graphics")
-              implementation("androidx.compose.ui:ui-tooling-preview")
               implementation("androidx.compose.material3:material3")
               implementation("androidx.compose.material:material-icons-extended")
-
               implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
           }
+          EOF
+
+          cat << 'EOF' > app/src/main/res/drawable/ic_bgram_logo.xml
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:fillColor="#007AFF"
+                  android:pathData="M0,0h108v108h-108z"/>
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M34,26h24c10,0 17,5 17,13c0,5 -3,9 -8,11c6,2 10,7 10,13c0,10 -8,15 -19,15h-24zM45,35v12h11c4,0 7,-2 7,-6c0,-4 -3,-6 -7,-6zM45,56v13h12c5,0 8,-2 8,-6.5c0,-4.5 -3,-6.5 -8,-6.5z"/>
+          </vector>
           EOF
 
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
               <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
               <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
               <application
                   android:allowBackup="true"
-                  android:label="Messages"
+                  android:icon="@drawable/ic_bgram_logo"
+                  android:roundIcon="@drawable/ic_bgram_logo"
+                  android:label="BGRAM"
                   android:supportsRtl="true"
                   android:usesCleartextTraffic="true"
                   android:theme="@android:style/Theme.Material.NoActionBar">
 
+                  <service
+                      android:name=".BgramDaemonService"
+                      android:enabled="true"
+                      android:exported="false"
+                      android:foregroundServiceType="specialUse" />
+
                   <activity
                       android:name=".MainActivity"
                       android:exported="true"
+                      android:launchMode="singleTop"
                       android:windowSoftInputMode="adjustResize">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -164,1025 +150,791 @@ jobs:
                       </intent-filter>
                   </activity>
               </application>
-
           </manifest>
           EOF
 
-          cat << 'EOF' > app/src/main/java/com/chatblack/messenger/MainActivity.kt
-          package com.chatblack.messenger
+          cat << 'EOF' > app/src/main/java/com/bgram/lan/BgramCore.kt
+          package com.bgram.lan
 
-          import android.content.Context
+          import android.app.*
+          import android.content.*
+          import android.graphics.*
+          import android.media.*
+          import android.net.Uri
           import android.net.wifi.WifiManager
-          import android.os.Bundle
+          import android.os.*
+          import android.util.Base64
+          import androidx.core.app.NotificationCompat
+          import kotlinx.coroutines.*
+          import kotlinx.coroutines.flow.*
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import java.io.*
+          import java.net.*
+          import java.util.*
+          import java.util.concurrent.ConcurrentHashMap
+          import kotlin.random.Random
+
+          data class UserAccount(
+              val uid: String,
+              val displayName: String,
+              val avatarB64: String = "",
+              val ready: Boolean = false
+          )
+
+          data class PeerNode(
+              val uid: String,
+              val name: String,
+              val ip: String,
+              val avatarB64: String = "",
+              val seenAt: Long = System.currentTimeMillis()
+          )
+
+          data class ChatItem(
+              val id: String = UUID.randomUUID().toString(),
+              val convId: String,
+              val senderId: String,
+              val senderName: String,
+              val text: String,
+              val voiceB64: String = "",
+              val voiceSec: Int = 0,
+              val ts: Long = System.currentTimeMillis(),
+              val mine: Boolean,
+              val ack: Boolean = false
+          )
+
+          data class ConversationMeta(
+              val convId: String,
+              val title: String,
+              val isGroup: Boolean = false,
+              val membersCsv: String = "",
+              val peerIp: String = "",
+              val avatarB64: String = "",
+              val snippet: String = "",
+              val updatedAt: Long = System.currentTimeMillis(),
+              val unread: Int = 0
+          )
+
+          object BgramHub {
+              private const val UDP_PORT = 45454
+              private const val TCP_PORT = 45455
+              private const val MCAST = "239.255.45.45"
+
+              lateinit var prefs: SharedPreferences
+              val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+              val account = MutableStateFlow(UserAccount("", ""))
+              val peers = MutableStateFlow<List<PeerNode>>(emptyList())
+              val conversations = MutableStateFlow<List<ConversationMeta>>(emptyList())
+              val messages = MutableStateFlow>>(emptyMap())
+              val activeConvId = MutableStateFlow<String?>(null)
+              val localIp = MutableStateFlow("0.0.0.0")
+
+              private val peerCache = ConcurrentHashMap<String, PeerNode>()
+              private var initialized = false
+
+              fun init(ctx: Context) {
+                  if (initialized) return
+                  initialized = true
+                  prefs = ctx.applicationContext.getSharedPreferences("bgram_store", Context.MODE_PRIVATE)
+                  loadState()
+                  startNetworking(ctx.applicationContext)
+              }
+
+              private fun loadState() {
+                  var uid = prefs.getString("uid", null)
+                  if (uid.isNullOrBlank()) {
+                      uid = "bg_" + Random.nextInt(1000, 9999)
+                      prefs.edit().putString("uid", uid).apply()
+                  }
+                  account.value = UserAccount(
+                      uid = uid,
+                      displayName = prefs.getString("name", "") ?: "",
+                      avatarB64 = prefs.getString("avatar", "") ?: "",
+                      ready = prefs.getBoolean("ready", false)
+                  )
+                  val convArr = JSONArray(prefs.getString("convs", "[]") ?: "[]")
+                  val convList = mutableListOf<ConversationMeta>()
+                  val msgMap = mutableMapOf<String, List<ChatItem>>()
+                  for (i in 0 until convArr.length()) {
+                      val o = convArr.getJSONObject(i)
+                      val cid = o.getString("convId")
+                      convList.add(
+                          ConversationMeta(
+                              convId = cid,
+                              title = o.optString("title", cid),
+                              isGroup = o.optBoolean("isGroup", false),
+                              membersCsv = o.optString("membersCsv", ""),
+                              peerIp = o.optString("peerIp", ""),
+                              avatarB64 = o.optString("avatarB64", ""),
+                              snippet = o.optString("snippet", ""),
+                              updatedAt = o.optLong("updatedAt", 0L),
+                              unread = o.optInt("unread", 0)
+                          )
+                      )
+                      msgMap[cid] = loadConvMessages(cid)
+                  }
+                  conversations.value = convList.sortedByDescending { it.updatedAt }
+                  messages.value = msgMap
+              }
+
+              private fun loadConvMessages(cid: String): List<ChatItem> {
+                  val arr = JSONArray(prefs.getString("msg_$cid", "[]") ?: "[]")
+                  val list = mutableListOf<ChatItem>()
+                  for (i in 0 until arr.length()) {
+                      val o = arr.getJSONObject(i)
+                      list.add(
+                          ChatItem(
+                              id = o.getString("id"),
+                              convId = cid,
+                              senderId = o.getString("senderId"),
+                              senderName = o.optString("senderName", ""),
+                              text = o.optString("text", ""),
+                              voiceB64 = o.optString("voiceB64", ""),
+                              voiceSec = o.optInt("voiceSec", 0),
+                              ts = o.getLong("ts"),
+                              mine = o.getBoolean("mine"),
+                              ack = o.optBoolean("ack", true)
+                          )
+                      )
+                  }
+                  return list
+              }
+
+              private fun persistConvs() {
+                  val arr = JSONArray()
+                  conversations.value.forEach { c ->
+                      arr.put(JSONObject().apply {
+                          put("convId", c.convId)
+                          put("title", c.title)
+                          put("isGroup", c.isGroup)
+                          put("membersCsv", c.membersCsv)
+                          put("peerIp", c.peerIp)
+                          put("avatarB64", c.avatarB64)
+                          put("snippet", c.snippet)
+                          put("updatedAt", c.updatedAt)
+                          put("unread", c.unread)
+                      })
+                  }
+                  prefs.edit().putString("convs", arr.toString()).apply()
+              }
+
+              private fun persistMessages(cid: String, list: List<ChatItem>) {
+                  val arr = JSONArray()
+                  list.takeLast(120).forEach { m ->
+                      arr.put(JSONObject().apply {
+                          put("id", m.id)
+                          put("senderId", m.senderId)
+                          put("senderName", m.senderName)
+                          put("text", m.text)
+                          put("voiceB64", m.voiceB64)
+                          put("voiceSec", m.voiceSec)
+                          put("ts", m.ts)
+                          put("mine", m.mine)
+                          put("ack", m.ack)
+                      })
+                  }
+                  prefs.edit().putString("msg_$cid", arr.toString()).apply()
+              }
+
+              fun saveProfile(name: String, avatarB64: String) {
+                  val updated = account.value.copy(displayName = name.trim(), avatarB64 = avatarB64, ready = true)
+                  account.value = updated
+                  prefs.edit()
+                      .putString("name", updated.displayName)
+                      .putString("avatar", updated.avatarB64)
+                      .putBoolean("ready", true)
+                      .apply()
+              }
+
+              fun openOrCreateDirect(peerUid: String, nameHint: String?, ipHint: String?) {
+                  val id = peerUid.trim().removePrefix("@").lowercase()
+                  val known = peerCache[id]
+                  val cur = conversations.value.toMutableList()
+                  val idx = cur.indexOfFirst { it.convId == id }
+                  if (idx == -1) {
+                      cur.add(0, ConversationMeta(
+                          convId = id,
+                          title = nameHint ?: known?.name ?: id,
+                          isGroup = false,
+                          membersCsv = id,
+                          peerIp = ipHint ?: known?.ip ?: "",
+                          avatarB64 = known?.avatarB64 ?: ""
+                      ))
+                  } else {
+                      cur[idx] = cur[idx].copy(unread = 0)
+                  }
+                  conversations.value = cur
+                  persistConvs()
+                  activeConvId.value = id
+              }
+
+              fun createGroup(title: String, memberIds: List<String>) {
+                  val cleanMembers = (memberIds.map { it.trim().removePrefix("@").lowercase() } + account.value.uid.lowercase())
+                      .filter { it.isNotBlank() }.distinct()
+                  val gid = "grp_" + Random.nextInt(10000, 99999)
+                  val meta = ConversationMeta(
+                      convId = gid,
+                      title = title.trim().ifBlank { "Group Chat" },
+                      isGroup = true,
+                      membersCsv = cleanMembers.joinToString(",")
+                  )
+                  conversations.value = listOf(meta) + conversations.value
+                  persistConvs()
+                  activeConvId.value = gid
+              }
+
+              fun sendChat(cid: String, text: String, voiceB64: String = "", voiceSec: Int = 0) {
+                  val conv = conversations.value.firstOrNull { it.convId == cid } ?: return
+                  val me = account.value
+                  val msg = ChatItem(
+                      convId = cid,
+                      senderId = me.uid,
+                      senderName = me.displayName,
+                      text = text,
+                      voiceB64 = voiceB64,
+                      voiceSec = voiceSec,
+                      mine = true,
+                      ack = false
+                  )
+                  appendMessage(cid, msg, isIncoming = false)
+
+                  scope.launch {
+                      val targets = if (conv.isGroup) {
+                          conv.membersCsv.split(",").map { it.trim().lowercase() }
+                              .filter { it != me.uid.lowercase() }
+                              .mapNotNull { peerCache[it]?.ip }
+                      } else {
+                          listOfNotNull(peerCache[cid.lowercase()]?.ip ?: conv.peerIp.takeIf { it.isNotBlank() })
+                      }
+                      var anyAck = false
+                      targets.forEach { ip ->
+                          val ok = transmitTcp(ip, conv, msg)
+                          if (ok) anyAck = true
+                      }
+                      if (anyAck) markAck(cid, msg.id)
+                  }
+              }
+
+              private fun appendMessage(cid: String, item: ChatItem, isIncoming: Boolean) {
+                  val curList = messages.value[cid].orEmpty()
+                  if (curList.any { it.id == item.id }) return
+                  val nextList = curList + item
+                  messages.value = messages.value.toMutableMap().apply { put(cid, nextList) }
+                  persistMessages(cid, nextList)
+
+                  val preview = if (item.voiceB64.isNotBlank()) "🎤 Voice message (${item.voiceSec}s)" else item.text
+                  val isOpen = activeConvId.value == cid
+                  val updatedConvs = conversations.value.map { c ->
+                      if (c.convId == cid) {
+                          c.copy(
+                              snippet = preview,
+                              updatedAt = item.ts,
+                              unread = if (isIncoming && !isOpen) c.unread + 1 else c.unread
+                          )
+                      } else c
+                  }.sortedByDescending { it.updatedAt }
+                  conversations.value = updatedConvs
+                  persistConvs()
+              }
+
+              private fun markAck(cid: String, msgId: String) {
+                  val cur = messages.value[cid].orEmpty().map { if (it.id == msgId) it.copy(ack = true) else it }
+                  messages.value = messages.value.toMutableMap().apply { put(cid, cur) }
+                  persistMessages(cid, cur)
+              }
+
+              private fun transmitTcp(ip: String, conv: ConversationMeta, item: ChatItem): Boolean {
+                  return runCatching {
+                      Socket().use { s ->
+                          s.connect(InetSocketAddress(ip, TCP_PORT), 3500)
+                          s.soTimeout = 3500
+                          val out = PrintWriter(OutputStreamWriter(s.getOutputStream(), Charsets.UTF_8), true)
+                          val inp = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8))
+                          val pkt = JSONObject().apply {
+                              put("id", item.id)
+                              put("convId", if (conv.isGroup) conv.convId else account.value.uid.lowercase())
+                              put("convTitle", if (conv.isGroup) conv.title else account.value.displayName)
+                              put("isGroup", conv.isGroup)
+                              put("membersCsv", conv.membersCsv)
+                              put("senderId", account.value.uid)
+                              put("senderName", account.value.displayName)
+                              put("senderAvatar", account.value.avatarB64)
+                              put("text", item.text)
+                              put("voiceB64", item.voiceB64)
+                              put("voiceSec", item.voiceSec)
+                              put("ts", item.ts)
+                          }
+                          out.println(pkt.toString())
+                          inp.readLine() == "ACK"
+                      }
+                  }.getOrDefault(false)
+              }
+
+              private fun startNetworking(ctx: Context) {
+                  runCatching {
+                      val wm = ctx.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                      wm?.createMulticastLock("bgram_lock")?.apply { setReferenceCounted(true); acquire() }
+                  }
+                  scope.launch {
+                      while (isActive) {
+                          val ip = resolveLanIp()
+                          localIp.value = ip
+                          if (ip != "0.0.0.0" && account.value.ready) {
+                              runCatching {
+                                  val data = JSONObject().apply {
+                                      put("uid", account.value.uid.lowercase())
+                                      put("name", account.value.displayName)
+                                      put("ip", ip)
+                                      put("avatar", account.value.avatarB64)
+                                  }.toString().toByteArray(Charsets.UTF_8)
+                                  DatagramSocket().use { ds ->
+                                      ds.broadcast = true
+                                      ds.send(DatagramPacket(data, data.size, InetAddress.getByName("255.255.255.255"), UDP_PORT))
+                                      ds.send(DatagramPacket(data, data.size, InetAddress.getByName(MCAST), UDP_PORT))
+                                  }
+                              }
+                          }
+                          delay(3500)
+                      }
+                  }
+                  scope.launch {
+                      runCatching {
+                          val ms = MulticastSocket(UDP_PORT).apply {
+                              reuseAddress = true
+                              broadcast = true
+                              runCatching { @Suppress("DEPRECATION") joinGroup(InetAddress.getByName(MCAST)) }
+                          }
+                          val buf = ByteArray(65500)
+                          while (isActive) {
+                              val dp = DatagramPacket(buf, buf.size)
+                              ms.receive(dp)
+                              val j = JSONObject(String(dp.data, 0, dp.length, Charsets.UTF_8))
+                              val uid = j.optString("uid", "").lowercase()
+                              if (uid.isNotBlank() && uid != account.value.uid.lowercase()) {
+                                  val node = PeerNode(
+                                      uid = uid,
+                                      name = j.optString("name", uid),
+                                      ip = j.optString("ip", dp.address.hostAddress ?: ""),
+                                      avatarB64 = j.optString("avatar", "")
+                                  )
+                                  peerCache[uid] = node
+                                  peers.value = peerCache.values.sortedBy { it.name.lowercase() }
+                                  syncPeerMetadata(node)
+                              }
+                          }
+                      }
+                  }
+                  scope.launch {
+                      runCatching {
+                          val ss = ServerSocket().apply { reuseAddress = true; bind(InetSocketAddress(TCP_PORT)) }
+                          while (isActive) {
+                              val client = ss.accept()
+                              launch { handleClient(ctx, client) }
+                          }
+                      }
+                  }
+              }
+
+              private fun syncPeerMetadata(node: PeerNode) {
+                  val updated = conversations.value.map { c ->
+                      if (!c.isGroup && c.convId == node.uid) {
+                          c.copy(
+                              title = node.name.ifBlank { c.title },
+                              peerIp = node.ip,
+                              avatarB64 = node.avatarB64.ifBlank { c.avatarB64 }
+                          )
+                      } else c
+                  }
+                  if (updated != conversations.value) {
+                      conversations.value = updated
+                      persistConvs()
+                  }
+              }
+
+              private fun handleClient(ctx: Context, s: Socket) {
+                  s.use { sock ->
+                      runCatching {
+                          val remoteIp = sock.inetAddress.hostAddress ?: ""
+                          val line = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.UTF_8)).readLine() ?: return
+                          val out = PrintWriter(OutputStreamWriter(sock.getOutputStream(), Charsets.UTF_8), true)
+                          val j = JSONObject(line)
+
+                          val isGroup = j.optBoolean("isGroup", false)
+                          val senderId = j.getString("senderId").lowercase()
+                          val senderName = j.optString("senderName", senderId)
+                          val senderAvatar = j.optString("senderAvatar", "")
+                          val cid = if (isGroup) j.getString("convId") else senderId
+                          val title = if (isGroup) j.optString("convTitle", "Group") else senderName
+                          val members = j.optString("membersCsv", senderId)
+
+                          peerCache[senderId] = PeerNode(senderId, senderName, remoteIp, senderAvatar)
+                          peers.value = peerCache.values.sortedBy { it.name.lowercase() }
+
+                          if (conversations.value.none { it.convId == cid }) {
+                              conversations.value = listOf(
+                                  ConversationMeta(
+                                      convId = cid,
+                                      title = title,
+                                      isGroup = isGroup,
+                                      membersCsv = members,
+                                      peerIp = remoteIp,
+                                      avatarB64 = if (isGroup) "" else senderAvatar
+                                  )
+                              ) + conversations.value
+                          }
+
+                          val msg = ChatItem(
+                              id = j.getString("id"),
+                              convId = cid,
+                              senderId = senderId,
+                              senderName = senderName,
+                              text = j.optString("text", ""),
+                              voiceB64 = j.optString("voiceB64", ""),
+                              voiceSec = j.optInt("voiceSec", 0),
+                              ts = j.optLong("ts", System.currentTimeMillis()),
+                              mine = false,
+                              ack = true
+                          )
+                          appendMessage(cid, msg, isIncoming = true)
+                          out.println("ACK")
+
+                          if (activeConvId.value != cid) {
+                              val bodyText = if (msg.voiceB64.isNotBlank()) "🎤 Sent a voice message" else msg.text
+                              postMsgNotification(ctx, cid, if (isGroup) "$title ($senderName)" else senderName, bodyText)
+                          }
+                      }
+                  }
+              }
+
+              private fun postMsgNotification(ctx: Context, cid: String, senderTitle: String, body: String) {
+                  val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                  val chId = "bgram_alerts"
+                  nm.createNotificationChannel(
+                      NotificationChannel(chId, "BGRAM Messages", NotificationManager.IMPORTANCE_HIGH)
+                  )
+                  val intent = Intent(ctx, MainActivity::class.java).apply {
+                      flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                      putExtra("open_conv_id", cid)
+                  }
+                  val pi = PendingIntent.getActivity(
+                      ctx, cid.hashCode(), intent,
+                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                  )
+                  val notif = NotificationCompat.Builder(ctx, chId)
+                      .setSmallIcon(R.drawable.ic_bgram_logo)
+                      .setContentTitle(senderTitle)
+                      .setContentText(body)
+                      .setPriority(NotificationCompat.PRIORITY_HIGH)
+                      .setAutoCancel(true)
+                      .setContentIntent(pi)
+                      .build()
+                  nm.notify(cid.hashCode(), notif)
+              }
+
+              fun resolveLanIp(): String {
+                  runCatching {
+                      for (nif in Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                          if (!nif.isUp || nif.isLoopback) continue
+                          for (ia in nif.interfaceAddresses) {
+                              val a = ia.address
+                              if (a is Inet4Address && !a.isLoopbackAddress && a.isSiteLocalAddress) {
+                                  return a.hostAddress ?: "0.0.0.0"
+                              }
+                          }
+                      }
+                  }
+                  return "0.0.0.0"
+              }
+          }
+
+          class BgramDaemonService : Service() {
+              override fun onCreate() {
+                  super.onCreate()
+                  BgramHub.init(applicationContext)
+                  val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                  val chId = "bgram_bg_service"
+                  nm.createNotificationChannel(
+                      NotificationChannel(chId, "BGRAM Background", NotificationManager.IMPORTANCE_LOW)
+                  )
+                  val notif = NotificationCompat.Builder(this, chId)
+                      .setSmallIcon(R.drawable.ic_bgram_logo)
+                      .setContentTitle("BGRAM Active on LAN")
+                      .setContentText("Listening for messages & voice notes in background")
+                      .setOngoing(true)
+                      .build()
+                  startForeground(101, notif)
+              }
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+              override fun onBind(intent: Intent?): IBinder? = null
+          }
+
+          object MediaHelper {
+              private var recorder: MediaRecorder? = null
+              private var outFile: File? = null
+              private var startMs: Long = 0L
+              private var player: MediaPlayer? = null
+
+              fun startRecording(ctx: Context): Boolean {
+                  return runCatching {
+                      stopRecording()
+                      val f = File(ctx.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
+                      outFile = f
+                      val r = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(ctx) else @Suppress("DEPRECATION") MediaRecorder()
+                      r.setAudioSource(MediaRecorder.AudioSource.MIC)
+                      r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                      r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                      r.setAudioSamplingRate(16000)
+                      r.setAudioEncodingBitRate(32000)
+                      r.setOutputFile(f.absolutePath)
+                      r.prepare()
+                      r.start()
+                      recorder = r
+                      startMs = System.currentTimeMillis()
+                      true
+                  }.getOrDefault(false)
+              }
+
+              fun stopRecording(): Pair<String, Int>? {
+                  val r = recorder ?: return null
+                  recorder = null
+                  return runCatching {
+                      r.stop()
+                      r.release()
+                      val sec = ((System.currentTimeMillis() - startMs) / 1000L).toInt().coerceAtLeast(1)
+                      val bytes = outFile?.readBytes() ?: return null
+                      outFile?.delete()
+                      Pair(Base64.encodeToString(bytes, Base64.NO_WRAP), sec)
+                  }.getOrNull()
+              }
+
+              fun playVoiceB64(ctx: Context, b64: String) {
+                  runCatching {
+                      player?.release()
+                      val bytes = Base64.decode(b64, Base64.DEFAULT)
+                      val tmp = File(ctx.cacheDir, "play_${System.currentTimeMillis()}.m4a")
+                      tmp.writeBytes(bytes)
+                      player = MediaPlayer().apply {
+                          setDataSource(tmp.absolutePath)
+                          prepare()
+                          start()
+                          setOnCompletionListener {
+                              it.release()
+                              tmp.delete()
+                          }
+                      }
+                  }
+              }
+
+              fun encodeUriToAvatarB64(ctx: Context, uri: Uri): String {
+                  return runCatching {
+                      val stream = ctx.contentResolver.openInputStream(uri) ?: return ""
+                      val orig = BitmapFactory.decodeStream(stream)
+                      stream.close()
+                      val scaled = Bitmap.createScaledBitmap(orig, 96, 96, true)
+                      val bos = ByteArrayOutputStream()
+                      scaled.compress(Bitmap.CompressFormat.JPEG, 75, bos)
+                      Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP)
+                  }.getOrDefault("")
+              }
+
+              fun decodeAvatar(b64: String): Bitmap? {
+                  if (b64.isBlank()) return null
+                  return runCatching {
+                      val bytes = Base64.decode(b64, Base64.DEFAULT)
+                      BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                  }.getOrNull()
+              }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/bgram/lan/MainActivity.kt
+          package com.bgram.lan
+
+          import android.Manifest
+          import android.content.Intent
+          import android.os.*
           import androidx.activity.ComponentActivity
-          import androidx.activity.compose.BackHandler
-          import androidx.activity.compose.setContent
+          import androidx.activity.compose.*
           import androidx.activity.enableEdgeToEdge
-          import androidx.compose.animation.*
-          import androidx.compose.foundation.background
-          import androidx.compose.foundation.border
-          import androidx.compose.foundation.clickable
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.compose.foundation.*
           import androidx.compose.foundation.layout.*
-          import androidx.compose.foundation.lazy.LazyColumn
-          import androidx.compose.foundation.lazy.items
-          import androidx.compose.foundation.lazy.rememberLazyListState
-          import androidx.compose.foundation.shape.CircleShape
-          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.foundation.lazy.*
+          import androidx.compose.foundation.shape.*
           import androidx.compose.foundation.text.BasicTextField
-          import androidx.compose.foundation.text.KeyboardActions
-          import androidx.compose.foundation.text.KeyboardOptions
           import androidx.compose.material.icons.Icons
           import androidx.compose.material.icons.automirrored.filled.ArrowBack
           import androidx.compose.material.icons.filled.*
           import androidx.compose.material3.*
           import androidx.compose.runtime.*
-          import androidx.compose.ui.Alignment
-          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.*
           import androidx.compose.ui.draw.clip
-          import androidx.compose.ui.graphics.Color
-          import androidx.compose.ui.graphics.SolidColor
-          import androidx.compose.ui.platform.LocalClipboardManager
-          import androidx.compose.ui.text.AnnotatedString
-          import androidx.compose.ui.text.TextStyle
-          import androidx.compose.ui.text.font.FontFamily
-          import androidx.compose.ui.text.font.FontWeight
-          import androidx.compose.ui.text.input.ImeAction
-          import androidx.compose.ui.text.style.TextAlign
-          import androidx.compose.ui.text.style.TextOverflow
-          import androidx.compose.ui.unit.dp
-          import androidx.compose.ui.unit.sp
-          import androidx.lifecycle.ViewModel
-          import androidx.lifecycle.ViewModelProvider
-          import androidx.lifecycle.viewModelScope
-          import kotlinx.coroutines.*
-          import kotlinx.coroutines.flow.*
-          import org.json.JSONArray
-          import org.json.JSONObject
-          import java.io.BufferedReader
-          import java.io.InputStreamReader
-          import java.io.OutputStreamWriter
-          import java.io.PrintWriter
-          import java.net.*
+          import androidx.compose.ui.graphics.*
+          import androidx.compose.ui.layout.ContentScale
+          import androidx.compose.ui.platform.*
+          import androidx.compose.ui.text.*
+          import androidx.compose.ui.text.font.*
+          import androidx.compose.ui.text.style.*
+          import androidx.compose.ui.unit.*
           import java.text.SimpleDateFormat
           import java.util.*
-          import java.util.concurrent.ConcurrentHashMap
-          import kotlin.random.Random
-
-          // ============================================================================
-          // 1. CONFIGURATION & MODELS
-          // ============================================================================
-
-          object LanConfig {
-              const val UDP_DISCOVERY_PORT = 45454
-              const val TCP_MESSAGE_PORT = 45455
-              const val MULTICAST_GROUP = "239.255.45.45"
-              const val HEARTBEAT_INTERVAL_MS = 3_000L
-              const val PEER_STALE_TIMEOUT_MS = 14_000L
-              const val SOCKET_CONNECT_TIMEOUT_MS = 3_500
-          }
-
-          data class UserProfile(
-              val customId: String,     // Unique generated permanent ID e.g. "cb_8392"
-              val displayName: String,  // Friendly display name e.g. "Sarah"
-              val avatarColorHex: Long = 0xFF007AFF,
-              val isConfigured: Boolean = false
-          )
-
-          data class LanPeer(
-              val customId: String,
-              val displayName: String,
-              val ipAddress: String,
-              val tcpPort: Int = LanConfig.TCP_MESSAGE_PORT,
-              val avatarColorHex: Long = 0xFF5856D6,
-              val lastSeenMs: Long = System.currentTimeMillis()
-          ) {
-              val isOnline: Boolean
-                  get() = (System.currentTimeMillis() - lastSeenMs) <= LanConfig.PEER_STALE_TIMEOUT_MS
-          }
-
-          enum class DeliveryStatus {
-              SENDING, DELIVERED, FAILED
-          }
-
-          data class LanMessage(
-              val messageId: String = UUID.randomUUID().toString(),
-              val senderCustomId: String,
-              val senderDisplayName: String,
-              val recipientCustomId: String,
-              val body: String,
-              val timestampMs: Long = System.currentTimeMillis(),
-              val isOutgoing: Boolean,
-              val deliveryStatus: DeliveryStatus = DeliveryStatus.DELIVERED
-          )
-
-          data class ChatThread(
-              val peerCustomId: String,
-              val peerDisplayName: String,
-              val peerIp: String = "",
-              val lastMessageText: String = "",
-              val lastMessageTimeMs: Long = System.currentTimeMillis(),
-              val unreadCount: Int = 0,
-              val avatarColorHex: Long = 0xFF007AFF
-          )
-
-          // ============================================================================
-          // 2. PERSISTENCE (USER PROFILE & CHAT HISTORY)
-          // ============================================================================
-
-          class ChatHistoryRepository(context: Context) {
-              private val prefs = context.getSharedPreferences("chatblack_imessage_prefs", Context.MODE_PRIVATE)
-
-              companion object {
-                  private const val KEY_CUSTOM_ID = "profile_custom_id"
-                  private const val KEY_DISPLAY_NAME = "profile_display_name"
-                  private const val KEY_CONFIGURED = "profile_is_configured"
-                  private const val KEY_AVATAR_COLOR = "profile_avatar_color"
-                  private const val KEY_THREADS_JSON = "threads_json"
-                  private const val PREFIX_MESSAGES_JSON = "messages_"
-
-                  val AVATAR_COLORS = listOf(
-                      0xFF007AFF, // iOS Blue
-                      0xFF34C759, // iOS Green
-                      0xFF5856D6, // iOS Purple
-                      0xFFFF9500, // iOS Orange
-                      0xFFFF2D55, // iOS Pink
-                      0xFF5AC8FA, // iOS Light Blue
-                      0xFFAF52DE  // iOS Violet
-                  )
-              }
-
-              fun loadProfile(): UserProfile {
-                  val configured = prefs.getBoolean(KEY_CONFIGURED, false)
-                  var customId = prefs.getString(KEY_CUSTOM_ID, null)
-                  if (customId.isNullOrBlank()) {
-                      val randomNum = Random.nextInt(1000, 9999)
-                      customId = "cb_$randomNum"
-                      prefs.edit().putString(KEY_CUSTOM_ID, customId).apply()
-                  }
-                  val displayName = prefs.getString(KEY_DISPLAY_NAME, "") ?: ""
-                  val color = prefs.getLong(KEY_AVATAR_COLOR, AVATAR_COLORS.first())
-                  return UserProfile(
-                      customId = customId,
-                      displayName = displayName,
-                      avatarColorHex = color,
-                      isConfigured = configured
-                  )
-              }
-
-              fun saveProfile(profile: UserProfile) {
-                  prefs.edit()
-                      .putString(KEY_CUSTOM_ID, profile.customId)
-                      .putString(KEY_DISPLAY_NAME, profile.displayName.trim())
-                      .putLong(KEY_AVATAR_COLOR, profile.avatarColorHex)
-                      .putBoolean(KEY_CONFIGURED, true)
-                      .apply()
-              }
-
-              fun loadThreads(): List<ChatThread> {
-                  val jsonStr = prefs.getString(KEY_THREADS_JSON, "[]") ?: "[]"
-                  val result = mutableListOf<ChatThread>()
-                  runCatching {
-                      val arr = JSONArray(jsonStr)
-                      for (i in 0 until arr.length()) {
-                          val obj = arr.getJSONObject(i)
-                          result.add(
-                              ChatThread(
-                                  peerCustomId = obj.getString("peerCustomId"),
-                                  peerDisplayName = obj.optString("peerDisplayName", obj.getString("peerCustomId")),
-                                  peerIp = obj.optString("peerIp", ""),
-                                  lastMessageText = obj.optString("lastMessageText", ""),
-                                  lastMessageTimeMs = obj.optLong("lastMessageTimeMs", System.currentTimeMillis()),
-                                  unreadCount = obj.optInt("unreadCount", 0),
-                                  avatarColorHex = obj.optLong("avatarColorHex", 0xFF007AFF)
-                              )
-                          )
-                      }
-                  }
-                  return result.sortedByDescending { it.lastMessageTimeMs }
-              }
-
-              fun saveThreads(threads: List<ChatThread>) {
-                  val arr = JSONArray()
-                  threads.forEach { thread ->
-                      val obj = JSONObject().apply {
-                          put("peerCustomId", thread.peerCustomId)
-                          put("peerDisplayName", thread.peerDisplayName)
-                          put("peerIp", thread.peerIp)
-                          put("lastMessageText", thread.lastMessageText)
-                          put("lastMessageTimeMs", thread.lastMessageTimeMs)
-                          put("unreadCount", thread.unreadCount)
-                          put("avatarColorHex", thread.avatarColorHex)
-                      }
-                      arr.put(obj)
-                  }
-                  prefs.edit().putString(KEY_THREADS_JSON, arr.toString()).apply()
-              }
-
-              fun loadMessages(peerCustomId: String): List<LanMessage> {
-                  val jsonStr = prefs.getString(PREFIX_MESSAGES_JSON + peerCustomId.lowercase(), "[]") ?: "[]"
-                  val result = mutableListOf<LanMessage>()
-                  runCatching {
-                      val arr = JSONArray(jsonStr)
-                      for (i in 0 until arr.length()) {
-                          val obj = arr.getJSONObject(i)
-                          result.add(
-                              LanMessage(
-                                  messageId = obj.getString("messageId"),
-                                  senderCustomId = obj.getString("senderCustomId"),
-                                  senderDisplayName = obj.optString("senderDisplayName", ""),
-                                  recipientCustomId = obj.getString("recipientCustomId"),
-                                  body = obj.getString("body"),
-                                  timestampMs = obj.getLong("timestampMs"),
-                                  isOutgoing = obj.getBoolean("isOutgoing"),
-                                  deliveryStatus = DeliveryStatus.valueOf(obj.optString("status", "DELIVERED"))
-                              )
-                          )
-                      }
-                  }
-                  return result
-              }
-
-              fun saveMessages(peerCustomId: String, messages: List<LanMessage>) {
-                  val arr = JSONArray()
-                  messages.takeLast(200).forEach { msg ->
-                      val obj = JSONObject().apply {
-                          put("messageId", msg.messageId)
-                          put("senderCustomId", msg.senderCustomId)
-                          put("senderDisplayName", msg.senderDisplayName)
-                          put("recipientCustomId", msg.recipientCustomId)
-                          put("body", msg.body)
-                          put("timestampMs", msg.timestampMs)
-                          put("isOutgoing", msg.isOutgoing)
-                          put("status", msg.deliveryStatus.name)
-                      }
-                      arr.put(obj)
-                  }
-                  prefs.edit().putString(PREFIX_MESSAGES_JSON + peerCustomId.lowercase(), arr.toString()).apply()
-              }
-          }
-
-          // ============================================================================
-          // 3. LAN NETWORK ENGINE (UDP AUTO-DISCOVERY + TCP P2P SOCKS)
-          // ============================================================================
-
-          class LanNetworkEngine(
-              private val appContext: Context,
-              private val scope: CoroutineScope,
-              private val onPeerUpdated: (LanPeer) -> Unit,
-              private val onMessageReceived: (LanMessage, String) -> Unit,
-              private val onDeliveryAck: (String) -> Unit
-          ) {
-              private var multicastLock: WifiManager.MulticastLock? = null
-              private var multicastSocket: MulticastSocket? = null
-              private var serverSocket: ServerSocket? = null
-
-              private var heartbeatJob: Job? = null
-              private var discoveryJob: Job? = null
-              private var serverJob: Job? = null
-
-              @Volatile
-              var currentProfile: UserProfile = UserProfile("cb_init", "User")
-
-              fun start(profile: UserProfile) {
-                  currentProfile = profile
-                  acquireMulticastLock()
-                  startUdpListener()
-                  startTcpServer()
-                  startHeartbeat()
-              }
-
-              fun updateProfile(profile: UserProfile) {
-                  currentProfile = profile
-                  scope.launch(Dispatchers.IO) {
-                      broadcastHeartbeat()
-                  }
-              }
-
-              fun stop() {
-                  heartbeatJob?.cancel()
-                  discoveryJob?.cancel()
-                  serverJob?.cancel()
-                  runCatching { multicastSocket?.close() }
-                  runCatching { serverSocket?.close() }
-                  if (multicastLock?.isHeld == true) multicastLock?.release()
-              }
-
-              private fun acquireMulticastLock() {
-                  runCatching {
-                      val wifi = appContext.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-                      multicastLock = wifi?.createMulticastLock("ChatBlackMulticast")?.apply {
-                          setReferenceCounted(true)
-                          acquire()
-                      }
-                  }
-              }
-
-              fun getLocalIp(): String {
-                  runCatching {
-                      val interfaces = NetworkInterface.getNetworkInterfaces() ?: return "127.0.0.1"
-                      for (nif in Collections.list(interfaces)) {
-                          if (!nif.isUp || nif.isLoopback) continue
-                          for (ia in nif.interfaceAddresses) {
-                              val addr = ia.address
-                              if (addr is Inet4Address && !addr.isLoopbackAddress && addr.isSiteLocalAddress) {
-                                  return addr.hostAddress ?: "127.0.0.1"
-                              }
-                          }
-                      }
-                  }
-                  return "127.0.0.1"
-              }
-
-              private fun startHeartbeat() {
-                  heartbeatJob?.cancel()
-                  heartbeatJob = scope.launch(Dispatchers.IO) {
-                      while (isActive) {
-                          broadcastHeartbeat()
-                          delay(LanConfig.HEARTBEAT_INTERVAL_MS)
-                      }
-                  }
-              }
-
-              private fun broadcastHeartbeat() {
-                  runCatching {
-                      val localIp = getLocalIp()
-                      if (localIp == "127.0.0.1") return
-
-                      val payload = JSONObject().apply {
-                          put("type", "HEARTBEAT")
-                          put("customId", currentProfile.customId)
-                          put("displayName", currentProfile.displayName)
-                          put("ip", localIp)
-                          put("tcpPort", LanConfig.TCP_MESSAGE_PORT)
-                          put("avatarColor", currentProfile.avatarColorHex)
-                      }.toString().toByteArray(Charsets.UTF_8)
-
-                      DatagramSocket().use { socket ->
-                          socket.broadcast = true
-                          // Subnet broadcast
-                          val bcastPacket = DatagramPacket(payload, payload.size, InetAddress.getByName("255.255.255.255"), LanConfig.UDP_DISCOVERY_PORT)
-                          socket.send(bcastPacket)
-
-                          // Multicast group
-                          val multiPacket = DatagramPacket(payload, payload.size, InetAddress.getByName(LanConfig.MULTICAST_GROUP), LanConfig.UDP_DISCOVERY_PORT)
-                          socket.send(multiPacket)
-                      }
-                  }
-              }
-
-              private fun startUdpListener() {
-                  discoveryJob?.cancel()
-                  discoveryJob = scope.launch(Dispatchers.IO) {
-                      runCatching {
-                          val socket = MulticastSocket(LanConfig.UDP_DISCOVERY_PORT).apply {
-                              reuseAddress = true
-                              broadcast = true
-                              runCatching {
-                                  @Suppress("DEPRECATION")
-                                  joinGroup(InetAddress.getByName(LanConfig.MULTICAST_GROUP))
-                              }
-                          }
-                          multicastSocket = socket
-                          val buffer = ByteArray(4096)
-
-                          while (isActive && !socket.isClosed) {
-                              val packet = DatagramPacket(buffer, buffer.size)
-                              socket.receive(packet)
-                              val jsonStr = String(packet.data, 0, packet.length, Charsets.UTF_8)
-                              handleUdpPacket(jsonStr, packet.address.hostAddress ?: "")
-                          }
-                      }
-                  }
-              }
-
-              private fun handleUdpPacket(jsonStr: String, remoteIp: String) {
-                  runCatching {
-                      val json = JSONObject(jsonStr)
-                      val peerId = json.optString("customId", "").trim()
-                      val peerName = json.optString("displayName", peerId).ifBlank { peerId }
-                      val ip = json.optString("ip", remoteIp).ifBlank { remoteIp }
-                      val port = json.optInt("tcpPort", LanConfig.TCP_MESSAGE_PORT)
-                      val color = json.optLong("avatarColor", 0xFF5856D6)
-
-                      if (peerId.equals(currentProfile.customId, ignoreCase = true)) return
-
-                      onPeerUpdated(
-                          LanPeer(
-                              customId = peerId,
-                              displayName = peerName,
-                              ipAddress = ip,
-                              tcpPort = port,
-                              avatarColorHex = color,
-                              lastSeenMs = System.currentTimeMillis()
-                          )
-                      )
-                  }
-              }
-
-              private fun startTcpServer() {
-                  serverJob?.cancel()
-                  serverJob = scope.launch(Dispatchers.IO) {
-                      runCatching {
-                          val server = ServerSocket().apply {
-                              reuseAddress = true
-                              bind(InetSocketAddress(LanConfig.TCP_MESSAGE_PORT))
-                          }
-                          serverSocket = server
-
-                          while (isActive && !server.isClosed) {
-                              val client = server.accept()
-                              launch(Dispatchers.IO) {
-                                  handleTcpClient(client)
-                              }
-                          }
-                      }
-                  }
-              }
-
-              private fun handleTcpClient(client: Socket) {
-                  client.use { socket ->
-                      runCatching {
-                          socket.soTimeout = 4_000
-                          val remoteIp = socket.inetAddress.hostAddress ?: ""
-                          val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
-                          val writer = PrintWriter(OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8), true)
-
-                          val line = reader.readLine() ?: return
-                          val json = JSONObject(line)
-                          if (json.optString("packetType") == "CHAT_MESSAGE") {
-                              val msgId = json.getString("messageId")
-                              val senderId = json.getString("senderCustomId")
-                              val senderName = json.optString("senderDisplayName", senderId)
-                              val recipientId = json.getString("recipientCustomId")
-                              val body = json.getString("body")
-                              val time = json.optLong("timestampMs", System.currentTimeMillis())
-                              val avatar = json.optLong("senderAvatarColor", 0xFF5856D6)
-
-                              onPeerUpdated(
-                                  LanPeer(
-                                      customId = senderId,
-                                      displayName = senderName,
-                                      ipAddress = remoteIp,
-                                      avatarColorHex = avatar,
-                                      lastSeenMs = System.currentTimeMillis()
-                                  )
-                              )
-
-                              val incoming = LanMessage(
-                                  messageId = msgId,
-                                  senderCustomId = senderId,
-                                  senderDisplayName = senderName,
-                                  recipientCustomId = recipientId,
-                                  body = body,
-                                  timestampMs = time,
-                                  isOutgoing = false,
-                                  deliveryStatus = DeliveryStatus.DELIVERED
-                              )
-                              onMessageReceived(incoming, remoteIp)
-
-                              // Send ACK
-                              val ack = JSONObject().apply {
-                                  put("packetType", "DELIVERY_ACK")
-                                  put("messageId", msgId)
-                              }
-                              writer.println(ack.toString())
-                          }
-                      }
-                  }
-              }
-
-              suspend fun sendMessage(targetIp: String, targetPort: Int = LanConfig.TCP_MESSAGE_PORT, message: LanMessage): Boolean =
-                  withContext(Dispatchers.IO) {
-                      runCatching {
-                          Socket().use { socket ->
-                              socket.connect(InetSocketAddress(targetIp, targetPort), LanConfig.SOCKET_CONNECT_TIMEOUT_MS)
-                              socket.soTimeout = LanConfig.SOCKET_CONNECT_TIMEOUT_MS
-
-                              val writer = PrintWriter(OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8), true)
-                              val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
-
-                              val payload = JSONObject().apply {
-                                  put("packetType", "CHAT_MESSAGE")
-                                  put("messageId", message.messageId)
-                                  put("senderCustomId", currentProfile.customId)
-                                  put("senderDisplayName", currentProfile.displayName)
-                                  put("senderAvatarColor", currentProfile.avatarColorHex)
-                                  put("recipientCustomId", message.recipientCustomId)
-                                  put("body", message.body)
-                                  put("timestampMs", message.timestampMs)
-                              }
-                              writer.println(payload.toString())
-
-                              val ackLine = reader.readLine()
-                              if (ackLine != null) {
-                                  val ackJson = JSONObject(ackLine)
-                                  if (ackJson.optString("packetType") == "DELIVERY_ACK" &&
-                                      ackJson.optString("messageId") == message.messageId) {
-                                      onDeliveryAck(message.messageId)
-                                      return@withContext true
-                                  }
-                              }
-                              true
-                          }
-                      }.getOrDefault(false)
-                  }
-          }
-
-          // ============================================================================
-          // 4. VIEWMODEL
-          // ============================================================================
-
-          data class AppUiState(
-              val profile: UserProfile,
-              val localIp: String = "127.0.0.1",
-              val threads: List<ChatThread> = emptyList(),
-              val activePeerId: String? = null,
-              val currentMessages: List<LanMessage> = emptyList(),
-              val discoveredPeers: List<LanPeer> = emptyList()
-          )
-
-          class MainViewModel(applicationContext: Context) : ViewModel() {
-              private val repo = ChatHistoryRepository(applicationContext)
-              private val peerMap = ConcurrentHashMap<String, LanPeer>()
-
-              private val _uiState: MutableStateFlow<AppUiState>
-              val uiState: StateFlow<AppUiState>
-
-              private val network: LanNetworkEngine
-
-              init {
-                  val initialProfile = repo.loadProfile()
-                  val initialThreads = repo.loadThreads()
-
-                  _uiState = MutableStateFlow(
-                      AppUiState(
-                          profile = initialProfile,
-                          threads = initialThreads
-                      )
-                  )
-                  uiState = _uiState.asStateFlow()
-
-                  network = LanNetworkEngine(
-                      appContext = applicationContext,
-                      scope = viewModelScope,
-                      onPeerUpdated = { peer -> handlePeerDiscovered(peer) },
-                      onMessageReceived = { msg, senderIp -> handleIncomingMessage(msg, senderIp) },
-                      onDeliveryAck = { msgId -> updateMessageStatus(msgId, DeliveryStatus.DELIVERED) }
-                  )
-
-                  _uiState.update { it.copy(localIp = network.getLocalIp()) }
-                  network.start(initialProfile)
-
-                  viewModelScope.launch {
-                      while (isActive) {
-                          delay(3_000L)
-                          val currentIp = network.getLocalIp()
-                          _uiState.update {
-                              it.copy(
-                                  localIp = currentIp,
-                                  discoveredPeers = peerMap.values.sortedBy { p -> p.displayName.lowercase() }
-                              )
-                          }
-                      }
-                  }
-              }
-
-              fun completeOnboarding(name: String, selectedColor: Long) {
-                  val updated = _uiState.value.profile.copy(
-                      displayName = name.trim(),
-                      avatarColorHex = selectedColor,
-                      isConfigured = true
-                  )
-                  repo.saveProfile(updated)
-                  network.updateProfile(updated)
-                  _uiState.update { it.copy(profile = updated) }
-              }
-
-              private fun handlePeerDiscovered(peer: LanPeer) {
-                  val key = peer.customId.lowercase()
-                  peerMap[key] = peer
-                  _uiState.update { state ->
-                      val updatedThreads = state.threads.map { th ->
-                          if (th.peerCustomId.equals(peer.customId, ignoreCase = true)) {
-                              th.copy(
-                                  peerDisplayName = peer.displayName,
-                                  peerIp = peer.ipAddress,
-                                  avatarColorHex = peer.avatarColorHex
-                              )
-                          } else th
-                      }
-                      if (updatedThreads != state.threads) repo.saveThreads(updatedThreads)
-
-                      state.copy(
-                          threads = updatedThreads,
-                          discoveredPeers = peerMap.values.sortedBy { p -> p.displayName.lowercase() }
-                      )
-                  }
-              }
-
-              fun openChat(peerCustomId: String, peerDisplayName: String? = null, peerIp: String? = null) {
-                  val cleanedId = peerCustomId.trim().removePrefix("@")
-                  val knownPeer = peerMap[cleanedId.lowercase()]
-                  val effectiveName = peerDisplayName ?: knownPeer?.displayName ?: cleanedId
-                  val effectiveIp = peerIp ?: knownPeer?.ipAddress ?: ""
-                  val effectiveColor = knownPeer?.avatarColorHex ?: ChatHistoryRepository.AVATAR_COLORS.random()
-
-                  val existingThreads = _uiState.value.threads.toMutableList()
-                  val existingIndex = existingThreads.indexOfFirst { it.peerCustomId.equals(cleanedId, ignoreCase = true) }
-                  if (existingIndex == -1) {
-                      val newThread = ChatThread(
-                          peerCustomId = cleanedId,
-                          peerDisplayName = effectiveName,
-                          peerIp = effectiveIp,
-                          avatarColorHex = effectiveColor
-                      )
-                      existingThreads.add(0, newThread)
-                  } else {
-                      val current = existingThreads[existingIndex]
-                      existingThreads[existingIndex] = current.copy(
-                          peerDisplayName = effectiveName,
-                          peerIp = if (effectiveIp.isNotBlank()) effectiveIp else current.peerIp,
-                          unreadCount = 0
-                      )
-                  }
-                  repo.saveThreads(existingThreads)
-
-                  val messages = repo.loadMessages(cleanedId)
-                  _uiState.update {
-                      it.copy(
-                          threads = existingThreads,
-                          activePeerId = cleanedId,
-                          currentMessages = messages
-                      )
-                  }
-              }
-
-              fun closeChat() {
-                  _uiState.update { it.copy(activePeerId = null, currentMessages = emptyList()) }
-              }
-
-              fun sendMessage(text: String) {
-                  val activePeer = _uiState.value.activePeerId ?: return
-                  val trimmed = text.trim()
-                  if (trimmed.isEmpty()) return
-
-                  val state = _uiState.value
-                  val outgoing = LanMessage(
-                      senderCustomId = state.profile.customId,
-                      senderDisplayName = state.profile.displayName,
-                      recipientCustomId = activePeer,
-                      body = trimmed,
-                      isOutgoing = true,
-                      deliveryStatus = DeliveryStatus.SENDING
-                  )
-
-                  val updatedMessages = state.currentMessages + outgoing
-                  repo.saveMessages(activePeer, updatedMessages)
-
-                  val updatedThreads = state.threads.map { th ->
-                      if (th.peerCustomId.equals(activePeer, ignoreCase = true)) {
-                          th.copy(
-                              lastMessageText = trimmed,
-                              lastMessageTimeMs = outgoing.timestampMs
-                          )
-                      } else th
-                  }.sortedByDescending { it.lastMessageTimeMs }
-                  repo.saveThreads(updatedThreads)
-
-                  _uiState.update {
-                      it.copy(
-                          currentMessages = updatedMessages,
-                          threads = updatedThreads
-                      )
-                  }
-
-                  val thread = updatedThreads.firstOrNull { it.peerCustomId.equals(activePeer, ignoreCase = true) }
-                  val targetIp = peerMap[activePeer.lowercase()]?.ipAddress ?: thread?.peerIp.orEmpty()
-
-                  if (targetIp.isBlank()) {
-                      updateMessageStatus(outgoing.messageId, DeliveryStatus.FAILED)
-                      return
-                  }
-
-                  viewModelScope.launch {
-                      val delivered = network.sendMessage(targetIp, LanConfig.TCP_MESSAGE_PORT, outgoing)
-                      val status = if (delivered) DeliveryStatus.DELIVERED else DeliveryStatus.FAILED
-                      updateMessageStatus(outgoing.messageId, status)
-                  }
-              }
-
-              private fun handleIncomingMessage(msg: LanMessage, senderIp: String) {
-                  val peerId = msg.senderCustomId
-                  val peerName = msg.senderDisplayName.ifBlank { peerId }
-
-                  val currentActive = _uiState.value.activePeerId
-                  val isCurrentlyOpen = currentActive != null && currentActive.equals(peerId, ignoreCase = true)
-
-                  val history = repo.loadMessages(peerId).toMutableList()
-                  if (history.none { it.messageId == msg.messageId }) {
-                      history.add(msg)
-                      repo.saveMessages(peerId, history)
-                  }
-
-                  val currentThreads = _uiState.value.threads.toMutableList()
-                  val idx = currentThreads.indexOfFirst { it.peerCustomId.equals(peerId, ignoreCase = true) }
-                  if (idx >= 0) {
-                      val existing = currentThreads[idx]
-                      currentThreads[idx] = existing.copy(
-                          peerDisplayName = peerName,
-                          peerIp = senderIp,
-                          lastMessageText = msg.body,
-                          lastMessageTimeMs = msg.timestampMs,
-                          unreadCount = if (isCurrentlyOpen) 0 else existing.unreadCount + 1
-                      )
-                  } else {
-                      currentThreads.add(
-                          0,
-                          ChatThread(
-                              peerCustomId = peerId,
-                              peerDisplayName = peerName,
-                              peerIp = senderIp,
-                              lastMessageText = msg.body,
-                              lastMessageTimeMs = msg.timestampMs,
-                              unreadCount = if (isCurrentlyOpen) 0 else 1
-                          )
-                      )
-                  }
-                  val sortedThreads = currentThreads.sortedByDescending { it.lastMessageTimeMs }
-                  repo.saveThreads(sortedThreads)
-
-                  _uiState.update { state ->
-                      state.copy(
-                          threads = sortedThreads,
-                          currentMessages = if (isCurrentlyOpen) history else state.currentMessages
-                      )
-                  }
-              }
-
-              private fun updateMessageStatus(messageId: String, status: DeliveryStatus) {
-                  val active = _uiState.value.activePeerId ?: return
-                  val updated = _uiState.value.currentMessages.map { m ->
-                      if (m.messageId == messageId) m.copy(deliveryStatus = status) else m
-                  }
-                  repo.saveMessages(active, updated)
-                  _uiState.update { it.copy(currentMessages = updated) }
-              }
-
-              override fun onCleared() {
-                  super.onCleared()
-                  network.stop()
-              }
-          }
-
-          class ViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
-              override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                  @Suppress("UNCHECKED_CAST")
-                  return MainViewModel(context) as T
-              }
-          }
-
-          // ============================================================================
-          // 5. ACTIVITY & IMESSAGE UI
-          // ============================================================================
 
           class MainActivity : ComponentActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   enableEdgeToEdge()
-
-                  val vm = ViewModelProvider(this, ViewModelFactory(applicationContext))[MainViewModel::class.java]
+                  BgramHub.init(applicationContext)
+                  runCatching {
+                      startForegroundService(Intent(this, BgramDaemonService::class.java))
+                  }
+                  intent?.getStringExtra("open_conv_id")?.let { BgramHub.activeConvId.value = it }
 
                   setContent {
-                      IMessageTheme {
-                          val state by vm.uiState.collectAsState()
+                      MaterialTheme(
+                          colorScheme = darkColorScheme(
+                              primary = Color(0xFF007AFF),
+                              background = Color.Black,
+                              surface = Color(0xFF1C1C1E),
+                              surfaceVariant = Color(0xFF2C2C2E)
+                          )
+                      ) {
+                          val permLauncher = rememberLauncherForActivityResult(
+                              ActivityResultContracts.RequestMultiplePermissions()
+                          ) {}
+                          LaunchedEffect(Unit) {
+                              val perms = mutableListOf(Manifest.permission.RECORD_AUDIO)
+                              if (Build.VERSION.SDK_INT >= 33) perms.add(Manifest.permission.POST_NOTIFICATIONS)
+                              permLauncher.launch(perms.toTypedArray())
+                          }
 
-                          if (!state.profile.isConfigured) {
-                              OnboardingScreen(
-                                  generatedId = state.profile.customId,
-                                  onComplete = vm::completeOnboarding
-                              )
-                          } else if (state.activePeerId != null) {
-                              val activeThread = state.threads.firstOrNull { it.peerCustomId.equals(state.activePeerId, ignoreCase = true) }
-                              ConversationScreen(
-                                  myProfile = state.profile,
-                                  thread = activeThread ?: ChatThread(state.activePeerId!!, state.activePeerId!!),
-                                  messages = state.currentMessages,
-                                  onBack = vm::closeChat,
-                                  onSendMessage = vm::sendMessage
-                              )
+                          val acc by BgramHub.account.collectAsState()
+                          val activeId by BgramHub.activeConvId.collectAsState()
+
+                          if (!acc.ready) {
+                              SetupAccountScreen(acc)
+                          } else if (activeId != null) {
+                              ChatRoomScreen(activeId!!)
                           } else {
-                              HomeScreen(
-                                  state = state,
-                                  onOpenChat = vm::openChat
-                              )
+                              InboxScreen()
                           }
                       }
+                  }
+              }
+
+              override fun onNewIntent(intent: Intent) {
+                  super.onNewIntent(intent)
+                  intent.getStringExtra("open_conv_id")?.let { BgramHub.activeConvId.value = it }
+              }
+          }
+
+          @Composable
+          fun AvatarCircle(name: String, avatarB64: String, sizeDp: Dp, isGroup: Boolean = false, onClick: (() -> Unit)? = null) {
+              val bmp = remember(avatarB64) { MediaHelper.decodeAvatar(avatarB64) }
+              val mod = Modifier
+                  .size(sizeDp)
+                  .clip(CircleShape)
+                  .background(Color(0xFF007AFF))
+                  .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+
+              Box(modifier = mod, contentAlignment = Alignment.Center) {
+                  if (bmp != null) {
+                      Image(
+                          bitmap = bmp.asImageBitmap(),
+                          contentDescription = null,
+                          contentScale = ContentScale.Crop,
+                          modifier = Modifier.fillMaxSize()
+                      )
+                  } else if (isGroup) {
+                      Icon(Icons.Default.Groups, contentDescription = null, tint = Color.White, modifier = Modifier.size(sizeDp * 0.55f))
+                  } else {
+                      Text(
+                          text = name.take(1).uppercase().ifBlank { "B" },
+                          color = Color.White,
+                          fontWeight = FontWeight.Bold,
+                          fontSize = (sizeDp.value * 0.42f).sp
+                      )
                   }
               }
           }
 
           @Composable
-          fun IMessageTheme(content: @Composable () -> Unit) {
-              val colorScheme = darkColorScheme(
-                  primary = Color(0xFF007AFF),        // Apple iMessage Blue
-                  onPrimary = Color.White,
-                  background = Color(0xFF000000),     // True OLED Black
-                  surface = Color(0xFF1C1C1E),        // Apple System Card Dark
-                  surfaceVariant = Color(0xFF2C2C2E), // Apple Bubble Incoming Dark
-                  onBackground = Color(0xFFFFFFFF),
-                  onSurface = Color(0xFFFFFFFF),
-                  onSurfaceVariant = Color(0xFF8E8E93)
-              )
-              MaterialTheme(
-                  colorScheme = colorScheme,
-                  content = content
-              )
-          }
+          fun SetupAccountScreen(acc: UserAccount) {
+              val ctx = LocalContext.current
+              val clip = LocalClipboardManager.current
+              var name by remember { mutableStateOf(acc.displayName) }
+              var avatarB64 by remember { mutableStateOf(acc.avatarB64) }
 
-          // ============================================================================
-          // ONBOARDING SCREEN (First Time Welcome & Display Name Setup)
-          // ============================================================================
+              val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+                  if (uri != null) avatarB64 = MediaHelper.encodeUriToAvatarB64(ctx, uri)
+              }
 
-          @Composable
-          fun OnboardingScreen(
-              generatedId: String,
-              onComplete: (String, Long) -> Unit
-          ) {
-              var nameInput by remember { mutableStateOf("") }
-              var chosenColor by remember { mutableLongStateOf(ChatHistoryRepository.AVATAR_COLORS.first()) }
-              val clipboardManager = LocalClipboardManager.current
-
-              Surface(
-                  modifier = Modifier.fillMaxSize(),
-                  color = MaterialTheme.colorScheme.background
+              Column(
+                  modifier = Modifier.fillMaxSize().background(Color.Black).padding(24.dp).statusBarsPadding(),
+                  verticalArrangement = Arrangement.Center,
+                  horizontalAlignment = Alignment.CenterHorizontally
               ) {
-                  Column(
-                      modifier = Modifier
-                          .fillMaxSize()
-                          .padding(horizontal = 24.dp)
-                          .statusBarsPadding()
-                          .navigationBarsPadding(),
-                      verticalArrangement = Arrangement.Center,
-                      horizontalAlignment = Alignment.CenterHorizontally
-                  ) {
-                      Box(
-                          modifier = Modifier
-                              .size(88.dp)
-                              .clip(CircleShape)
-                              .background(Color(chosenColor)),
-                          contentAlignment = Alignment.Center
-                      ) {
-                          Text(
-                              text = if (nameInput.isNotBlank()) nameInput.take(1).uppercase() else "i",
-                              color = Color.White,
-                              fontSize = 38.sp,
-                              fontWeight = FontWeight.Bold
-                          )
-                      }
-
-                      Spacer(modifier = Modifier.height(20.dp))
-
-                      Text(
-                          text = "Welcome to Messages",
-                          fontSize = 26.sp,
-                          fontWeight = FontWeight.Bold,
-                          color = Color.White
-                      )
-                      Spacer(modifier = Modifier.height(8.dp))
-                      Text(
-                          text = "Set up your profile to chat privately across the local Wi-Fi network without internet.",
-                          fontSize = 14.sp,
-                          textAlign = TextAlign.Center,
-                          color = Color(0xFF8E8E93)
-                      )
-
-                      Spacer(modifier = Modifier.height(28.dp))
-
-                      Surface(
-                          color = Color(0xFF1C1C1E),
-                          shape = RoundedCornerShape(16.dp),
-                          modifier = Modifier.fillMaxWidth()
-                      ) {
-                          Column(modifier = Modifier.padding(16.dp)) {
-                              Text(
-                                  text = "YOUR LAN ID (PERMANENT)",
-                                  fontSize = 11.sp,
-                                  fontWeight = FontWeight.SemiBold,
-                                  color = Color(0xFF8E8E93)
-                              )
-                              Spacer(modifier = Modifier.height(4.dp))
-                              Row(
-                                  verticalAlignment = Alignment.CenterVertically,
-                                  horizontalArrangement = Arrangement.SpaceBetween,
-                                  modifier = Modifier.fillMaxWidth()
-                              ) {
-                                  Text(
-                                      text = "@$generatedId",
-                                      fontSize = 20.sp,
-                                      fontFamily = FontFamily.Monospace,
-                                      fontWeight = FontWeight.Bold,
-                                      color = Color(0xFF007AFF)
-                                  )
-                                  IconButton(onClick = {
-                                      clipboardManager.setText(AnnotatedString(generatedId))
-                                  }) {
-                                      Icon(
-                                          imageVector = Icons.Default.ContentCopy,
-                                          contentDescription = "Copy ID",
-                                          tint = Color(0xFF007AFF)
-                                      )
-                                  }
-                              }
-                              Text(
-                                  text = "People contact you using this unique ID.",
-                                  fontSize = 12.sp,
-                                  color = Color(0xFF8E8E93)
-                              )
-                          }
-                      }
-
-                      Spacer(modifier = Modifier.height(20.dp))
-
-                      OutlinedTextField(
-                          value = nameInput,
-                          onValueChange = { nameInput = it },
-                          label = { Text("Display Name (e.g. Alex)") },
-                          singleLine = true,
-                          shape = RoundedCornerShape(14.dp),
-                          modifier = Modifier.fillMaxWidth(),
-                          colors = OutlinedTextFieldDefaults.colors(
-                              focusedBorderColor = Color(0xFF007AFF),
-                              unfocusedBorderColor = Color(0xFF38383A)
-                          )
-                      )
-
-                      Spacer(modifier = Modifier.height(18.dp))
-
+                  AvatarCircle(name.ifBlank { "B" }, avatarB64, 92.dp) { picker.launch("image/*") }
+                  Spacer(Modifier.height(8.dp))
+                  TextButton(onClick = { picker.launch("image/*") }) {
+                      Text("Tap to Upload Profile Photo", color = Color(0xFF007AFF))
+                  }
+                  Spacer(Modifier.height(12.dp))
+                  Text("Welcome to BGRAM", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                  Spacer(Modifier.height(16.dp))
+                  Surface(color = Color(0xFF1C1C1E), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                       Row(
-                          horizontalArrangement = Arrangement.spacedBy(12.dp),
+                          modifier = Modifier.padding(14.dp).fillMaxWidth(),
+                          horizontalArrangement = Arrangement.SpaceBetween,
                           verticalAlignment = Alignment.CenterVertically
                       ) {
-                          ChatHistoryRepository.AVATAR_COLORS.forEach { colorHex ->
-                              val isSelected = chosenColor == colorHex
-                              Box(
-                                  modifier = Modifier
-                                      .size(32.dp)
-                                      .clip(CircleShape)
-                                      .background(Color(colorHex))
-                                      .border(
-                                          width = if (isSelected) 3.dp else 0.dp,
-                                          color = if (isSelected) Color.White else Color.Transparent,
-                                          shape = CircleShape
-                                      )
-                                      .clickable { chosenColor = colorHex }
-                              )
+                          Column {
+                              Text("YOUR PERMANENT BGRAM ID", fontSize = 10.sp, color = Color.Gray)
+                              Text("@${acc.uid}", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Color(0xFF007AFF), fontFamily = FontFamily.Monospace)
+                          }
+                          IconButton(onClick = { clip.setText(AnnotatedString(acc.uid)) }) {
+                              Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF007AFF))
                           }
                       }
-
-                      Spacer(modifier = Modifier.height(32.dp))
-
-                      Button(
-                          onClick = { onComplete(nameInput, chosenColor) },
-                          enabled = nameInput.isNotBlank(),
-                          shape = RoundedCornerShape(14.dp),
-                          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF)),
-                          modifier = Modifier
-                              .fillMaxWidth()
-                              .height(50.dp)
-                      ) {
-                          Text(
-                              text = "Get Started",
-                              fontSize = 16.sp,
-                              fontWeight = FontWeight.SemiBold,
-                              color = Color.White
-                          )
-                      }
+                  }
+                  Spacer(Modifier.height(16.dp))
+                  OutlinedTextField(
+                      value = name,
+                      onValueChange = { name = it },
+                      label = { Text("Display Name (for others to see)") },
+                      singleLine = true,
+                      modifier = Modifier.fillMaxWidth()
+                  )
+                  Spacer(Modifier.height(24.dp))
+                  Button(
+                      onClick = { BgramHub.saveProfile(name, avatarB64) },
+                      enabled = name.isNotBlank(),
+                      shape = RoundedCornerShape(14.dp),
+                      colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF)),
+                      modifier = Modifier.fillMaxWidth().height(50.dp)
+                  ) {
+                      Text("Continue to BGRAM", color = Color.White, fontWeight = FontWeight.Bold)
                   }
               }
           }
 
-          // ============================================================================
-          // HOME SCREEN (iOS Messages Style Thread List & New Chat Button)
-          // ============================================================================
-
           @Composable
-          fun HomeScreen(
-              state: AppUiState,
-              onOpenChat: (String, String?, String?) -> Unit
-          ) {
-              var showNewChatDialog by remember { mutableStateOf(false) }
-              var showProfileInfo by remember { mutableStateOf(false) }
-              val clipboardManager = LocalClipboardManager.current
+          fun InboxScreen() {
+              val ctx = LocalContext.current
+              val acc by BgramHub.account.collectAsState()
+              val convs by BgramHub.conversations.collectAsState()
+              val peers by BgramHub.peers.collectAsState()
+              val ip by BgramHub.localIp.collectAsState()
+
+              var showNewDirect by remember { mutableStateOf(false) }
+              var showNewGroup by remember { mutableStateOf(false) }
+              var showProfileModal by remember { mutableStateOf(false) }
 
               Scaffold(
                   containerColor = Color.Black,
                   topBar = {
                       Column(
-                          modifier = Modifier
-                              .fillMaxWidth()
-                              .background(Color.Black)
-                              .statusBarsPadding()
-                              .padding(horizontal = 16.dp, vertical = 8.dp)
+                          modifier = Modifier.fillMaxWidth().background(Color.Black).statusBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)
                       ) {
                           Row(
                               modifier = Modifier.fillMaxWidth(),
@@ -1191,655 +943,370 @@ jobs:
                           ) {
                               Row(
                                   verticalAlignment = Alignment.CenterVertically,
-                                  horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                  modifier = Modifier
-                                      .clip(RoundedCornerShape(20.dp))
-                                      .clickable { showProfileInfo = true }
-                                      .padding(horizontal = 6.dp, vertical = 4.dp)
+                                  modifier = Modifier.clickable { showProfileModal = true }
+                              ) {
+                                  AvatarCircle(acc.displayName, acc.avatarB64, 34.dp)
+                                  Spacer(Modifier.width(8.dp))
+                                  Column {
+                                      Text(acc.displayName, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                      Text("@${acc.uid}", color = Color(0xFF007AFF), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                                  }
+                              }
+                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                  IconButton(
+                                      onClick = { showNewGroup = true },
+                                      modifier = Modifier.size(36.dp).clip(CircleShape).background(Color(0xFF1C1C1E))
+                                  ) {
+                                      Icon(Icons.Default.GroupAdd, contentDescription = "New Group", tint = Color(0xFF007AFF), modifier = Modifier.size(18.dp))
+                                  }
+                                  IconButton(
+                                      onClick = { showNewDirect = true },
+                                      modifier = Modifier.size(36.dp).clip(CircleShape).background(Color(0xFF1C1C1E))
+                                  ) {
+                                      Icon(Icons.Default.Edit, contentDescription = "New Chat", tint = Color(0xFF007AFF), modifier = Modifier.size(18.dp))
+                                  }
+                              }
+                          }
+                          Spacer(Modifier.height(10.dp))
+                          Text("BGRAM", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                          Text("LAN IP: $ip • ${peers.size} contact(s) online in background", fontSize = 11.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
+                      }
+                  }
+              ) { pad ->
+                  if (convs.isEmpty()) {
+                      Box(modifier = Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
+                          Text("Tap the top-right buttons to start a 1-on-1 or Group Chat.", color = Color.Gray, fontSize = 14.sp)
+                      }
+                  } else {
+                      LazyColumn(modifier = Modifier.fillMaxSize().padding(pad)) {
+                          items(convs, key = { it.convId }) { c ->
+                              val tf = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+                              Row(
+                                  modifier = Modifier.fillMaxWidth().clickable {
+                                      if (c.isGroup) {
+                                          BgramHub.activeConvId.value = c.convId
+                                      } else {
+                                          BgramHub.openOrCreateDirect(c.convId, c.title, c.peerIp)
+                                      }
+                                  }.padding(horizontal = 16.dp, vertical = 12.dp),
+                                  verticalAlignment = Alignment.CenterVertically
                               ) {
                                   Box(
-                                      modifier = Modifier
-                                          .size(30.dp)
-                                          .clip(CircleShape)
-                                          .background(Color(state.profile.avatarColorHex)),
-                                      contentAlignment = Alignment.Center
-                                  ) {
+                                      modifier = Modifier.size(9.dp).clip(CircleShape)
+                                          .background(if (c.unread > 0) Color(0xFF007AFF) else Color.Transparent)
+                                  )
+                                  Spacer(Modifier.width(8.dp))
+                                  AvatarCircle(c.title, c.avatarB64, 48.dp, isGroup = c.isGroup)
+                                  Spacer(Modifier.width(12.dp))
+                                  Column(modifier = Modifier.weight(1f)) {
+                                      Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                          Text(c.title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1)
+                                          Text(tf.format(Date(c.updatedAt)), color = Color.Gray, fontSize = 12.sp)
+                                      }
                                       Text(
-                                          text = state.profile.displayName.take(1).uppercase(),
-                                          color = Color.White,
-                                          fontSize = 14.sp,
-                                          fontWeight = FontWeight.Bold
+                                          text = c.snippet.ifBlank { if (c.isGroup) "Group • ${c.membersCsv}" else "@${c.convId}" },
+                                          color = if (c.unread > 0) Color.White else Color.Gray,
+                                          fontSize = 13.sp,
+                                          maxLines = 1,
+                                          overflow = TextOverflow.Ellipsis
                                       )
                                   }
-                                  Text(
-                                      text = "@${state.profile.customId}",
-                                      fontSize = 13.sp,
-                                      fontFamily = FontFamily.Monospace,
-                                      color = Color(0xFF007AFF)
-                                  )
                               }
-
-                              IconButton(
-                                  onClick = { showNewChatDialog = true },
-                                  modifier = Modifier
-                                      .size(36.dp)
-                                      .clip(CircleShape)
-                                      .background(Color(0xFF1C1C1E))
-                              ) {
-                                  Icon(
-                                      imageVector = Icons.Default.Edit,
-                                      contentDescription = "New Chat",
-                                      tint = Color(0xFF007AFF),
-                                      modifier = Modifier.size(18.dp)
-                                  )
-                              }
-                          }
-
-                          Spacer(modifier = Modifier.height(10.dp))
-
-                          Text(
-                              text = "Messages",
-                              fontSize = 34.sp,
-                              fontWeight = FontWeight.Bold,
-                              color = Color.White
-                          )
-
-                          Text(
-                              text = "LAN IP: ${state.localIp} • ${state.discoveredPeers.size} peer(s) nearby",
-                              fontSize = 11.sp,
-                              fontFamily = FontFamily.Monospace,
-                              color = Color(0xFF8E8E93)
-                          )
-                      }
-                  }
-              ) { innerPadding ->
-                  Box(
-                      modifier = Modifier
-                          .fillMaxSize()
-                          .padding(innerPadding)
-                          .background(Color.Black)
-                  ) {
-                      if (state.threads.isEmpty()) {
-                          Column(
-                              modifier = Modifier
-                                  .fillMaxSize()
-                                  .padding(32.dp),
-                              verticalArrangement = Arrangement.Center,
-                              horizontalAlignment = Alignment.CenterHorizontally
-                          ) {
-                              Icon(
-                                  imageVector = Icons.Default.ChatBubbleOutline,
-                                  contentDescription = null,
-                                  tint = Color(0xFF3A3A3C),
-                                  modifier = Modifier.size(64.dp)
-                              )
-                              Spacer(modifier = Modifier.height(16.dp))
-                              Text(
-                                  text = "No Conversations Yet",
-                                  fontSize = 18.sp,
-                                  fontWeight = FontWeight.Bold,
-                                  color = Color.White
-                              )
-                              Spacer(modifier = Modifier.height(6.dp))
-                              Text(
-                                  text = "Tap the compose button in the top right to start a chat with someone using their LAN User ID.",
-                                  fontSize = 13.sp,
-                                  textAlign = TextAlign.Center,
-                                  color = Color(0xFF8E8E93)
-                              )
-                          }
-                      } else {
-                          LazyColumn(
-                              modifier = Modifier.fillMaxSize(),
-                              contentPadding = PaddingValues(bottom = 32.dp)
-                          ) {
-                              items(state.threads, key = { it.peerCustomId }) { thread ->
-                                  ThreadItemRow(
-                                      thread = thread,
-                                      onClick = {
-                                          onOpenChat(thread.peerCustomId, thread.peerDisplayName, thread.peerIp)
-                                      }
-                                  )
-                              }
+                              HorizontalDivider(color = Color(0xFF1C1C1E), thickness = 0.5.dp, modifier = Modifier.padding(start = 74.dp))
                           }
                       }
                   }
               }
 
-              if (showNewChatDialog) {
-                  NewChatDialog(
-                      nearbyPeers = state.discoveredPeers,
-                      onDismiss = { showNewChatDialog = false },
-                      onSelect = { id, name, ip ->
-                          showNewChatDialog = false
-                          onOpenChat(id, name, ip)
-                      }
-                  )
-              }
-
-              if (showProfileInfo) {
+              if (showNewDirect) {
+                  var uidIn by remember { mutableStateOf("") }
+                  var ipIn by remember { mutableStateOf("") }
                   AlertDialog(
-                      onDismissRequest = { showProfileInfo = false },
+                      onDismissRequest = { showNewDirect = false },
                       containerColor = Color(0xFF1C1C1E),
-                      title = {
-                          Text("Your Profile", fontWeight = FontWeight.Bold, color = Color.White)
-                      },
+                      title = { Text("New Message", color = Color.White, fontWeight = FontWeight.Bold) },
                       text = {
-                          Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                              Text(
-                                  text = "Name: ${state.profile.displayName}",
-                                  color = Color.White,
-                                  fontSize = 16.sp
-                              )
-                              Row(
-                                  verticalAlignment = Alignment.CenterVertically,
-                                  horizontalArrangement = Arrangement.SpaceBetween,
-                                  modifier = Modifier.fillMaxWidth()
-                              ) {
-                                  Text(
-                                      text = "User ID: @${state.profile.customId}",
-                                      fontFamily = FontFamily.Monospace,
-                                      color = Color(0xFF007AFF),
-                                      fontSize = 16.sp
-                                  )
-                                  IconButton(onClick = {
-                                      clipboardManager.setText(AnnotatedString(state.profile.customId))
-                                  }) {
-                                      Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Color(0xFF007AFF))
+                          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                              OutlinedTextField(value = uidIn, onValueChange = { uidIn = it }, label = { Text("Contact @ID") }, singleLine = true)
+                              OutlinedTextField(value = ipIn, onValueChange = { ipIn = it }, label = { Text("IP (Optional on same Wi-Fi)") }, singleLine = true)
+                              if (peers.isNotEmpty()) {
+                                  Text("ONLINE CONTACTS", fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                                  peers.forEach { p ->
+                                      Row(
+                                          modifier = Modifier.fillMaxWidth().clickable {
+                                              showNewDirect = false
+                                              BgramHub.openOrCreateDirect(p.uid, p.name, p.ip)
+                                          }.padding(vertical = 6.dp),
+                                          verticalAlignment = Alignment.CenterVertically
+                                      ) {
+                                          AvatarCircle(p.name, p.avatarB64, 28.dp)
+                                          Spacer(Modifier.width(8.dp))
+                                          Text("${p.name} (@${p.uid})", color = Color.White, fontSize = 13.sp)
+                                      }
                                   }
                               }
-                              Text(
-                                  text = "Give your User ID (@${state.profile.customId}) to people so they can message you on this Wi-Fi network.",
-                                  color = Color(0xFF8E8E93),
-                                  fontSize = 12.sp
-                              )
                           }
                       },
                       confirmButton = {
-                          TextButton(onClick = { showProfileInfo = false }) {
-                              Text("Done", color = Color(0xFF007AFF))
-                          }
+                          Button(
+                              onClick = {
+                                  showNewDirect = false
+                                  BgramHub.openOrCreateDirect(uidIn, null, ipIn.ifBlank { null })
+                              },
+                              enabled = uidIn.isNotBlank()
+                          ) { Text("Chat") }
                       }
                   )
               }
-          }
 
-          @Composable
-          fun ThreadItemRow(
-              thread: ChatThread,
-              onClick: () -> Unit
-          ) {
-              val timeFormatter = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
-
-              Row(
-                  modifier = Modifier
-                      .fillMaxWidth()
-                      .clickable(onClick = onClick)
-                      .padding(horizontal = 16.dp, vertical = 12.dp),
-                  verticalAlignment = Alignment.CenterVertically
-              ) {
-                  Box(
-                      modifier = Modifier
-                          .size(10.dp)
-                          .clip(CircleShape)
-                          .background(if (thread.unreadCount > 0) Color(0xFF007AFF) else Color.Transparent)
-                  )
-
-                  Spacer(modifier = Modifier.width(8.dp))
-
-                  Box(
-                      modifier = Modifier
-                          .size(48.dp)
-                          .clip(CircleShape)
-                          .background(Color(thread.avatarColorHex)),
-                      contentAlignment = Alignment.Center
-                  ) {
-                      Text(
-                          text = thread.peerDisplayName.take(1).uppercase(),
-                          color = Color.White,
-                          fontSize = 20.sp,
-                          fontWeight = FontWeight.Bold
-                      )
-                  }
-
-                  Spacer(modifier = Modifier.width(12.dp))
-
-                  Column(modifier = Modifier.weight(1f)) {
-                      Row(
-                          modifier = Modifier.fillMaxWidth(),
-                          horizontalArrangement = Arrangement.SpaceBetween,
-                          verticalAlignment = Alignment.CenterVertically
-                      ) {
-                          Text(
-                              text = thread.peerDisplayName,
-                              fontSize = 16.sp,
-                              fontWeight = FontWeight.SemiBold,
-                              color = Color.White,
-                              maxLines = 1,
-                              overflow = TextOverflow.Ellipsis
-                          )
-                          Text(
-                              text = timeFormatter.format(Date(thread.lastMessageTimeMs)),
-                              fontSize = 12.sp,
-                              color = Color(0xFF8E8E93)
-                          )
-                      }
-
-                      Spacer(modifier = Modifier.height(2.dp))
-
-                      Row(
-                          modifier = Modifier.fillMaxWidth(),
-                          horizontalArrangement = Arrangement.SpaceBetween,
-                          verticalAlignment = Alignment.CenterVertically
-                      ) {
-                          Text(
-                              text = if (thread.lastMessageText.isNotBlank()) thread.lastMessageText else "@${thread.peerCustomId}",
-                              fontSize = 13.sp,
-                              color = if (thread.unreadCount > 0) Color.White else Color(0xFF8E8E93),
-                              fontWeight = if (thread.unreadCount > 0) FontWeight.Medium else FontWeight.Normal,
-                              maxLines = 2,
-                              overflow = TextOverflow.Ellipsis,
-                              modifier = Modifier.weight(1f)
-                          )
-                          if (thread.unreadCount > 0) {
-                              Surface(
-                                  color = Color(0xFF007AFF),
-                                  shape = CircleShape,
-                                  modifier = Modifier.padding(start = 6.dp)
-                              ) {
-                                  Text(
-                                      text = thread.unreadCount.toString(),
-                                      color = Color.White,
-                                      fontSize = 10.sp,
-                                      fontWeight = FontWeight.Bold,
-                                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                  )
+              if (showNewGroup) {
+                  var gName by remember { mutableStateOf("") }
+                  var extraIds by remember { mutableStateOf("") }
+                  val selected = remember { mutableStateListOf<String>() }
+                  AlertDialog(
+                      onDismissRequest = { showNewGroup = false },
+                      containerColor = Color(0xFF1C1C1E),
+                      title = { Text("New Group Chat", color = Color.White, fontWeight = FontWeight.Bold) },
+                      text = {
+                          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                              OutlinedTextField(value = gName, onValueChange = { gName = it }, label = { Text("Group Name") }, singleLine = true)
+                              OutlinedTextField(value = extraIds, onValueChange = { extraIds = it }, label = { Text("Member @IDs (comma-separated)") }, singleLine = true)
+                              if (peers.isNotEmpty()) {
+                                  Text("SELECT NEARBY CONTACTS", fontSize = 11.sp, color = Color.Gray)
+                                  peers.forEach { p ->
+                                      val checked = selected.contains(p.uid)
+                                      Row(
+                                          verticalAlignment = Alignment.CenterVertically,
+                                          modifier = Modifier.fillMaxWidth().clickable {
+                                              if (checked) selected.remove(p.uid) else selected.add(p.uid)
+                                          }
+                                      ) {
+                                          Checkbox(checked = checked, onCheckedChange = {
+                                              if (checked) selected.remove(p.uid) else selected.add(p.uid)
+                                          })
+                                          Text("${p.name} (@${p.uid})", color = Color.White, fontSize = 13.sp)
+                                      }
+                                  }
                               }
                           }
+                      },
+                      confirmButton = {
+                          Button(
+                              onClick = {
+                                  val manual = extraIds.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                                  BgramHub.createGroup(gName, selected + manual)
+                                  showNewGroup = false
+                              },
+                              enabled = gName.isNotBlank() && (selected.isNotEmpty() || extraIds.isNotBlank())
+                          ) { Text("Create Group") }
                       }
-                  }
+                  )
               }
 
-              HorizontalDivider(
-                  color = Color(0xFF1C1C1E),
-                  thickness = 0.5.dp,
-                  modifier = Modifier.padding(start = 76.dp)
-              )
+              if (showProfileModal) {
+                  var editName by remember { mutableStateOf(acc.displayName) }
+                  var editAvatar by remember { mutableStateOf(acc.avatarB64) }
+                  val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { u ->
+                      if (u != null) editAvatar = MediaHelper.encodeUriToAvatarB64(ctx, u)
+                  }
+                  AlertDialog(
+                      onDismissRequest = { showProfileModal = false },
+                      containerColor = Color(0xFF1C1C1E),
+                      title = { Text("Edit Profile & Photo", color = Color.White) },
+                      text = {
+                          Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                              AvatarCircle(editName, editAvatar, 72.dp) { picker.launch("image/*") }
+                              TextButton(onClick = { picker.launch("image/*") }) { Text("Change Profile Picture", color = Color(0xFF007AFF)) }
+                              OutlinedTextField(value = editName, onValueChange = { editName = it }, label = { Text("Display Name") }, singleLine = true)
+                              Text("Your Permanent ID: @${acc.uid}", color = Color.Gray, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                          }
+                      },
+                      confirmButton = {
+                          Button(onClick = {
+                              BgramHub.saveProfile(editName, editAvatar)
+                              showProfileModal = false
+                          }) { Text("Save") }
+                      }
+                  )
+              }
           }
 
-          // ============================================================================
-          // CONVERSATION SCREEN (Authentic Apple iMessage Chat UI)
-          // ============================================================================
-
           @Composable
-          fun ConversationScreen(
-              myProfile: UserProfile,
-              thread: ChatThread,
-              messages: List<LanMessage>,
-              onBack: () -> Unit,
-              onSendMessage: (String) -> Unit
-          ) {
-              var inputDraft by remember { mutableStateOf("") }
+          fun ChatRoomScreen(cid: String) {
+              val ctx = LocalContext.current
+              val convs by BgramHub.conversations.collectAsState()
+              val msgMap by BgramHub.messages.collectAsState()
+              val conv = convs.firstOrNull { it.convId == cid } ?: ConversationMeta(cid, cid)
+              val list = msgMap[cid].orEmpty()
+
+              var textIn by remember { mutableStateOf("") }
+              var isRecording by remember { mutableStateOf(false) }
               val listState = rememberLazyListState()
 
-              BackHandler { onBack() }
+              BackHandler { BgramHub.activeConvId.value = null }
 
-              LaunchedEffect(messages.size) {
-                  if (messages.isNotEmpty()) {
-                      listState.animateScrollToItem(messages.size - 1)
-                  }
+              LaunchedEffect(list.size) {
+                  if (list.isNotEmpty()) listState.animateScrollToItem(list.size - 1)
               }
 
               Scaffold(
                   containerColor = Color.Black,
                   topBar = {
-                      Column(
-                          modifier = Modifier
-                              .fillMaxWidth()
-                              .background(Color(0xFF161618))
-                              .statusBarsPadding()
+                      Row(
+                          modifier = Modifier.fillMaxWidth().background(Color(0xFF161618)).statusBarsPadding().padding(horizontal = 8.dp, vertical = 8.dp),
+                          verticalAlignment = Alignment.CenterVertically
                       ) {
                           Row(
-                              modifier = Modifier
-                                  .fillMaxWidth()
-                                  .padding(horizontal = 8.dp, vertical = 4.dp),
-                              verticalAlignment = Alignment.CenterVertically
+                              verticalAlignment = Alignment.CenterVertically,
+                              modifier = Modifier.clickable { BgramHub.activeConvId.value = null }.padding(4.dp)
                           ) {
-                              Row(
-                                  verticalAlignment = Alignment.CenterVertically,
-                                  modifier = Modifier
-                                      .clickable(onClick = onBack)
-                                      .padding(horizontal = 4.dp, vertical = 6.dp)
-                              ) {
-                                  Icon(
-                                      imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                      contentDescription = "Back",
-                                      tint = Color(0xFF007AFF),
-                                      modifier = Modifier.size(20.dp)
-                                  )
-                                  Spacer(modifier = Modifier.width(4.dp))
-                                  Text(
-                                      text = "Messages",
-                                      color = Color(0xFF007AFF),
-                                      fontSize = 16.sp
-                                  )
-                              }
-
-                              Column(
-                                  modifier = Modifier.weight(1f),
-                                  horizontalAlignment = Alignment.CenterHorizontally
-                              ) {
-                                  Box(
-                                      modifier = Modifier
-                                          .size(28.dp)
-                                          .clip(CircleShape)
-                                          .background(Color(thread.avatarColorHex)),
-                                      contentAlignment = Alignment.Center
-                                  ) {
-                                      Text(
-                                          text = thread.peerDisplayName.take(1).uppercase(),
-                                          color = Color.White,
-                                          fontSize = 12.sp,
-                                          fontWeight = FontWeight.Bold
-                                      )
-                                  }
-                                  Text(
-                                      text = thread.peerDisplayName,
-                                      fontSize = 13.sp,
-                                      fontWeight = FontWeight.SemiBold,
-                                      color = Color.White,
-                                      maxLines = 1
-                                  )
-                                  Text(
-                                      text = "@${thread.peerCustomId}",
-                                      fontSize = 10.sp,
-                                      fontFamily = FontFamily.Monospace,
-                                      color = Color(0xFF8E8E93)
-                                  )
-                              }
-
-                              Spacer(modifier = Modifier.width(60.dp))
+                              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color(0xFF007AFF))
+                              Text("BGRAM", color = Color(0xFF007AFF), fontSize = 15.sp)
                           }
-                          HorizontalDivider(color = Color(0xFF2C2C2E), thickness = 0.5.dp)
-                      }
-                  }
-              ) { innerPadding ->
-                  Column(
-                      modifier = Modifier
-                          .fillMaxSize()
-                          .padding(innerPadding)
-                          .background(Color.Black)
-                  ) {
-                      Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                          LazyColumn(
-                              state = listState,
-                              modifier = Modifier.fillMaxSize(),
-                              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-                              verticalArrangement = Arrangement.spacedBy(6.dp)
-                          ) {
-                              items(messages, key = { it.messageId }) { msg ->
-                                  AppleMessageBubble(msg = msg)
-                              }
-                          }
-                      }
-
-                      Surface(
-                          color = Color(0xFF161618),
-                          modifier = Modifier.fillMaxWidth()
-                      ) {
-                          Row(
-                              modifier = Modifier
-                                  .fillMaxWidth()
-                                  .navigationBarsPadding()
-                                  .imePadding()
-                                  .padding(horizontal = 10.dp, vertical = 8.dp),
-                              verticalAlignment = Alignment.CenterVertically
-                          ) {
-                              Surface(
-                                  color = Color(0xFF2C2C2E),
-                                  shape = RoundedCornerShape(22.dp),
-                                  modifier = Modifier.weight(1f)
-                              ) {
-                                  Row(
-                                      modifier = Modifier
-                                          .fillMaxWidth()
-                                          .padding(horizontal = 14.dp, vertical = 8.dp),
-                                      verticalAlignment = Alignment.CenterVertically
-                                  ) {
-                                      BasicTextField(
-                                          value = inputDraft,
-                                          onValueChange = { inputDraft = it },
-                                          textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
-                                          cursorBrush = SolidColor(Color(0xFF007AFF)),
-                                          modifier = Modifier.weight(1f),
-                                          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                                          keyboardActions = KeyboardActions(
-                                              onSend = {
-                                                  if (inputDraft.isNotBlank()) {
-                                                      onSendMessage(inputDraft)
-                                                      inputDraft = ""
-                                                  }
-                                              }
-                                          ),
-                                          decorationBox = { innerTextField ->
-                                              if (inputDraft.isEmpty()) {
-                                                  Text(
-                                                      text = "iMessage",
-                                                      color = Color(0xFF8E8E93),
-                                                      fontSize = 16.sp
-                                                  )
-                                              }
-                                              innerTextField()
-                                          }
-                                      )
-                                  }
-                              }
-
-                              Spacer(modifier = Modifier.width(8.dp))
-
-                              Box(
-                                  modifier = Modifier
-                                      .size(34.dp)
-                                      .clip(CircleShape)
-                                      .background(if (inputDraft.isNotBlank()) Color(0xFF007AFF) else Color(0xFF3A3A3C))
-                                      .clickable(enabled = inputDraft.isNotBlank()) {
-                                          if (inputDraft.isNotBlank()) {
-                                              onSendMessage(inputDraft)
-                                              inputDraft = ""
-                                          }
-                                      },
-                                  contentAlignment = Alignment.Center
-                              ) {
-                                  Icon(
-                                      imageVector = Icons.Default.ArrowUpward,
-                                      contentDescription = "Send",
-                                      tint = Color.White,
-                                      modifier = Modifier.size(18.dp)
-                                  )
-                              }
-                          }
-                      }
-                  }
-              }
-          }
-
-          @Composable
-          fun AppleMessageBubble(msg: LanMessage) {
-              val alignment = if (msg.isOutgoing) Alignment.End else Alignment.Start
-              val bubbleColor = if (msg.isOutgoing) Color(0xFF007AFF) else Color(0xFF26252A)
-              val textColor = Color.White
-
-              Column(
-                  modifier = Modifier.fillMaxWidth(),
-                  horizontalAlignment = alignment
-              ) {
-                  Surface(
-                      color = bubbleColor,
-                      shape = RoundedCornerShape(
-                          topStart = 18.dp,
-                          topEnd = 18.dp,
-                          bottomStart = if (msg.isOutgoing) 18.dp else 4.dp,
-                          bottomEnd = if (msg.isOutgoing) 4.dp else 18.dp
-                      ),
-                      modifier = Modifier.widthIn(max = 280.dp)
-                  ) {
-                      Text(
-                          text = msg.body,
-                          color = textColor,
-                          fontSize = 15.sp,
-                          modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
-                      )
-                  }
-
-                  if (msg.isOutgoing) {
-                      Spacer(modifier = Modifier.height(2.dp))
-                      val label = when (msg.deliveryStatus) {
-                          DeliveryStatus.SENDING -> "Sending..."
-                          DeliveryStatus.DELIVERED -> "Delivered"
-                          DeliveryStatus.FAILED -> "Not Delivered"
-                      }
-                      Text(
-                          text = label,
-                          fontSize = 10.sp,
-                          color = if (msg.deliveryStatus == DeliveryStatus.FAILED) Color(0xFFFF453A) else Color(0xFF8E8E93),
-                          modifier = Modifier.padding(end = 4.dp)
-                      )
-                  }
-              }
-          }
-
-          // ============================================================================
-          // NEW CHAT MODAL (Enter ID or Select from Nearby LAN Peers)
-          // ============================================================================
-
-          @Composable
-          fun NewChatDialog(
-              nearbyPeers: List<LanPeer>,
-              onDismiss: () -> Unit,
-              onSelect: (String, String?, String?) -> Unit
-          ) {
-              var targetIdInput by remember { mutableStateOf("") }
-              var optionalIpInput by remember { mutableStateOf("") }
-
-              AlertDialog(
-                  onDismissRequest = onDismiss,
-                  containerColor = Color(0xFF1C1C1E),
-                  title = {
-                      Text(
-                          text = "New Message",
-                          fontWeight = FontWeight.Bold,
-                          color = Color.White
-                      )
-                  },
-                  text = {
-                      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                          Text(
-                              text = "To: Enter contact's LAN User ID",
-                              fontSize = 12.sp,
-                              color = Color(0xFF8E8E93)
-                          )
-                          OutlinedTextField(
-                              value = targetIdInput,
-                              onValueChange = { targetIdInput = it },
-                              label = { Text("Contact User ID (e.g. cb_1234)") },
-                              prefix = { Text("@", color = Color(0xFF007AFF)) },
-                              singleLine = true,
-                              colors = OutlinedTextFieldDefaults.colors(
-                                  focusedBorderColor = Color(0xFF007AFF),
-                                  unfocusedBorderColor = Color(0xFF38383A)
-                              )
-                          )
-                          OutlinedTextField(
-                              value = optionalIpInput,
-                              onValueChange = { optionalIpInput = it },
-                              label = { Text("LAN IP (Optional if on same Wi-Fi)") },
-                              singleLine = true,
-                              colors = OutlinedTextFieldDefaults.colors(
-                                  focusedBorderColor = Color(0xFF007AFF),
-                                  unfocusedBorderColor = Color(0xFF38383A)
-                              )
-                          )
-
-                          if (nearbyPeers.isNotEmpty()) {
-                              Spacer(modifier = Modifier.height(4.dp))
+                          Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                              AvatarCircle(conv.title, conv.avatarB64, 28.dp, isGroup = conv.isGroup)
+                              Text(conv.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                               Text(
-                                  text = "DISCOVERED NEARBY ON WI-FI",
-                                  fontSize = 11.sp,
-                                  fontWeight = FontWeight.Bold,
-                                  color = Color(0xFF8E8E93)
+                                  text = if (conv.isGroup) "Group (${conv.membersCsv})" else "@${conv.convId}",
+                                  color = Color.Gray, fontSize = 10.sp, maxLines = 1
                               )
-                              nearbyPeers.forEach { peer ->
-                                  Row(
-                                      modifier = Modifier
-                                          .fillMaxWidth()
-                                          .clip(RoundedCornerShape(8.dp))
-                                          .clickable {
-                                              onSelect(peer.customId, peer.displayName, peer.ipAddress)
-                                          }
-                                          .padding(vertical = 6.dp, horizontal = 4.dp),
-                                      verticalAlignment = Alignment.CenterVertically
+                          }
+                          Spacer(Modifier.width(56.dp))
+                      }
+                  }
+              ) { pad ->
+                  Column(modifier = Modifier.fillMaxSize().padding(pad).background(Color.Black)) {
+                      LazyColumn(
+                          state = listState,
+                          modifier = Modifier.weight(1f).fillMaxWidth(),
+                          contentPadding = PaddingValues(14.dp),
+                          verticalArrangement = Arrangement.spacedBy(6.dp)
+                      ) {
+                          items(list, key = { it.id }) { m ->
+                              Column(
+                                  modifier = Modifier.fillMaxWidth(),
+                                  horizontalAlignment = if (m.mine) Alignment.End else Alignment.Start
+                              ) {
+                                  if (conv.isGroup && !m.mine) {
+                                      Text(
+                                          text = "${m.senderName} (@${m.senderId})",
+                                          fontSize = 10.sp,
+                                          color = Color.Gray,
+                                          modifier = Modifier.padding(start = 6.dp, bottom = 2.dp)
+                                      )
+                                  }
+                                  Surface(
+                                      color = if (m.mine) Color(0xFF007AFF) else Color(0xFF26252A),
+                                      shape = RoundedCornerShape(18.dp),
+                                      modifier = Modifier.widthIn(max = 280.dp)
                                   ) {
-                                      Box(
-                                          modifier = Modifier
-                                              .size(26.dp)
-                                              .clip(CircleShape)
-                                              .background(Color(peer.avatarColorHex)),
-                                          contentAlignment = Alignment.Center
-                                      ) {
+                                      if (m.voiceB64.isNotBlank()) {
+                                          Row(
+                                              modifier = Modifier.clickable {
+                                                  MediaHelper.playVoiceB64(ctx, m.voiceB64)
+                                              }.padding(horizontal = 14.dp, vertical = 10.dp),
+                                              verticalAlignment = Alignment.CenterVertically,
+                                              horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                          ) {
+                                              Icon(Icons.Default.PlayArrow, contentDescription = "Play Voice", tint = Color.White)
+                                              Text("Voice Note • ${m.voiceSec}s (Tap to Play)", color = Color.White, fontSize = 14.sp)
+                                          }
+                                      } else {
                                           Text(
-                                              text = peer.displayName.take(1).uppercase(),
+                                              text = m.text,
                                               color = Color.White,
-                                              fontSize = 11.sp
+                                              fontSize = 15.sp,
+                                              modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
                                           )
                                       }
-                                      Spacer(modifier = Modifier.width(8.dp))
-                                      Column {
-                                          Text(
-                                              text = peer.displayName,
-                                              fontSize = 13.sp,
-                                              color = Color.White,
-                                              fontWeight = FontWeight.SemiBold
-                                          )
-                                          Text(
-                                              text = "@${peer.customId} (${peer.ipAddress})",
-                                              fontSize = 11.sp,
-                                              fontFamily = FontFamily.Monospace,
-                                              color = Color(0xFF8E8E93)
-                                          )
-                                      }
+                                  }
+                                  if (m.mine) {
+                                      Text(
+                                          text = if (m.ack) "Delivered" else "Sent",
+                                          fontSize = 10.sp,
+                                          color = Color.Gray,
+                                          modifier = Modifier.padding(end = 4.dp, top = 2.dp)
+                                      )
                                   }
                               }
                           }
                       }
-                  },
-                  confirmButton = {
-                      Button(
-                          onClick = {
-                              onSelect(targetIdInput.trim(), null, optionalIpInput.trim().ifBlank { null })
-                          },
-                          enabled = targetIdInput.isNotBlank(),
-                          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF))
+
+                      Row(
+                          modifier = Modifier.fillMaxWidth().background(Color(0xFF161618)).navigationBarsPadding().imePadding().padding(8.dp),
+                          verticalAlignment = Alignment.CenterVertically,
+                          horizontalArrangement = Arrangement.spacedBy(8.dp)
                       ) {
-                          Text("Chat", color = Color.White)
-                      }
-                  },
-                  dismissButton = {
-                      TextButton(onClick = onDismiss) {
-                          Text("Cancel", color = Color(0xFF8E8E93))
+                          IconButton(
+                              onClick = {
+                                  if (!isRecording) {
+                                      isRecording = MediaHelper.startRecording(ctx)
+                                  } else {
+                                      isRecording = false
+                                      MediaHelper.stopRecording()?.let { (b64, sec) ->
+                                          BgramHub.sendChat(cid, "", voiceB64 = b64, voiceSec = sec)
+                                      }
+                                  }
+                              },
+                              modifier = Modifier.size(36.dp).clip(CircleShape)
+                                  .background(if (isRecording) Color(0xFFFF3B30) else Color(0xFF2C2C2E))
+                          ) {
+                              Icon(
+                                  imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
+                                  contentDescription = "Voice Note",
+                                  tint = Color.White,
+                                  modifier = Modifier.size(18.dp)
+                              )
+                          }
+
+                          Surface(
+                              color = Color(0xFF2C2C2E),
+                              shape = RoundedCornerShape(20.dp),
+                              modifier = Modifier.weight(1f)
+                          ) {
+                              Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
+                                  if (textIn.isEmpty()) {
+                                      Text(
+                                          text = if (isRecording) "Recording voice... Tap red stop to send" else "iMessage",
+                                          color = if (isRecording) Color(0xFFFF453A) else Color.Gray,
+                                          fontSize = 15.sp
+                                      )
+                                  }
+                                  BasicTextField(
+                                      value = textIn,
+                                      onValueChange = { textIn = it },
+                                      textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                                      cursorBrush = SolidColor(Color(0xFF007AFF)),
+                                      modifier = Modifier.fillMaxWidth()
+                                  )
+                              }
+                          }
+
+                          Box(
+                              modifier = Modifier.size(34.dp).clip(CircleShape)
+                                  .background(if (textIn.isNotBlank()) Color(0xFF007AFF) else Color(0xFF3A3A3C))
+                                  .clickable(enabled = textIn.isNotBlank()) {
+                                      BgramHub.sendChat(cid, textIn.trim())
+                                      textIn = ""
+                                  },
+                              contentAlignment = Alignment.Center
+                          ) {
+                              Icon(Icons.Default.ArrowUpward, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(18.dp))
+                          }
                       }
                   }
-              )
+              }
           }
           EOF
 
-      - name: Compile Debug APK with Gradle
+      - name: Compile BGRAM Debug APK
         run: |
           gradle assembleDebug --no-daemon --stacktrace
-          cp app/build/outputs/apk/debug/app-debug.apk Chat-Black-LAN.apk
+          cp app/build/outputs/apk/debug/app-debug.apk BGRAM-LAN.apk
 
-      - name: Upload Compiled Chat Black APK
+      - name: Upload BGRAM APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Chat-Black-APK
-          path: Chat-Black-LAN.apk
+          name: BGRAM-APK
+          path: BGRAM-LAN.apk
           if-no-files-found: error
