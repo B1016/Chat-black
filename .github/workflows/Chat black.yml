@@ -82,8 +82,8 @@ jobs:
                   applicationId = "com.bgram.lan"
                   minSdk = 26
                   targetSdk = 34
-                  versionCode = 3
-                  versionName = "3.0"
+                  versionCode = 4
+                  versionName = "4.0"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -284,10 +284,13 @@ jobs:
               }
 
               private fun loadState() {
-                  var uid = prefs.getString("uid", null)
-                  if (uid.isNullOrBlank()) {
-                      uid = "bg_" + Random.nextInt(1000, 9999)
-                      prefs.edit().putString("uid", uid).apply()
+                  val savedUid = prefs.getString("uid", null)
+                  val uid: String = if (savedUid.isNullOrBlank()) {
+                      val gen = "bg_" + Random.nextInt(1000, 9999)
+                      prefs.edit().putString("uid", gen).apply()
+                      gen
+                  } else {
+                      savedUid
                   }
                   account.value = UserAccount(
                       uid = uid,
@@ -522,7 +525,7 @@ jobs:
                           setReferenceCounted(true)
                           acquire()
                       }
-                  } catch (_: Exception) {}
+                  } catch (e: Exception) {}
 
                   scope.launch {
                       while (isActive) {
@@ -541,7 +544,7 @@ jobs:
                                       ds.send(DatagramPacket(data, data.size, InetAddress.getByName("255.255.255.255"), UDP_PORT))
                                       ds.send(DatagramPacket(data, data.size, InetAddress.getByName(MCAST), UDP_PORT))
                                   }
-                              } catch (_: Exception) {}
+                              } catch (e: Exception) {}
                           }
                           delay(3500)
                       }
@@ -554,7 +557,7 @@ jobs:
                               broadcast = true
                               try {
                                   joinGroup(InetAddress.getByName(MCAST))
-                              } catch (_: Exception) {}
+                              } catch (e: Exception) {}
                           }
                           val buf = ByteArray(65500)
                           while (isActive) {
@@ -574,7 +577,7 @@ jobs:
                                   syncPeerMetadata(node)
                               }
                           }
-                      } catch (_: Exception) {}
+                      } catch (e: Exception) {}
                   }
 
                   scope.launch {
@@ -587,7 +590,7 @@ jobs:
                               val client = ss.accept()
                               launch { handleClient(ctx, client) }
                           }
-                      } catch (_: Exception) {}
+                      } catch (e: Exception) {}
                   }
               }
 
@@ -662,7 +665,7 @@ jobs:
                               }
                           }
                       }
-                  } catch (_: Exception) {}
+                  } catch (e: Exception) {}
               }
 
               private fun postMsgNotification(ctx: Context, cid: String, senderTitle: String, body: String) {
@@ -701,7 +704,7 @@ jobs:
                               }
                           }
                       }
-                  } catch (_: Exception) {}
+                  } catch (e: Exception) {}
                   return "0.0.0.0"
               }
           }
@@ -794,7 +797,7 @@ jobs:
                               tmp.delete()
                           }
                       }
-                  } catch (_: Exception) {}
+                  } catch (e: Exception) {}
               }
 
               fun encodeUriToAvatarB64(ctx: Context, uri: Uri): String {
@@ -925,7 +928,7 @@ jobs:
                   BgramHub.init(applicationContext)
                   try {
                       startForegroundService(Intent(this, BgramDaemonService::class.java))
-                  } catch (_: Exception) {}
+                  } catch (e: Exception) {}
                   intent?.getStringExtra("open_conv_id")?.let { BgramHub.activeConvId.value = it }
 
                   setContent {
@@ -1434,7 +1437,7 @@ jobs:
 
       - name: Compile BGRAM Debug APK
         run: |
-          gradle assembleDebug --no-daemon
+          gradle assembleDebug --no-daemon --console=plain
           cp app/build/outputs/apk/debug/app-debug.apk BGRAM-LAN.apk
 
       - name: Upload BGRAM APK Artifact
