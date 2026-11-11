@@ -341,7 +341,7 @@ jobs:
               val account = MutableStateFlow(UserAccount("", ""))
               val peers = MutableStateFlow<List<PeerNode>>(emptyList())
               val conversations = MutableStateFlow<List<ConversationMeta>>(emptyList())
-              val messages = MutableStateFlow>>(emptyMap())
+              val messages = MutableStateFlow<List<ChatItem>>(emptyList())
               val adminLogs = MutableStateFlow<List<ChatItem>>(emptyList())
               val activeConvId = MutableStateFlow<String?>(null)
               val localIp = MutableStateFlow("0.0.0.0")
@@ -375,7 +375,7 @@ jobs:
                   )
                   val convArr = JSONArray(prefs.getString("convs", "[]") ?: "[]")
                   val convList = mutableListOf<ConversationMeta>()
-                  val msgMap = mutableMapOf<String, List<ChatItem>>()
+                  val msgList = mutableListOf<ChatItem>()
                   for (i in 0 until convArr.length()) {
                       val o = convArr.getJSONObject(i)
                       val cid = o.getString("convId")
@@ -392,10 +392,10 @@ jobs:
                               unread = o.optInt("unread", 0)
                           )
                       )
-                      msgMap[cid] = loadConvMessages("msg_$cid")
+                      msgList.addAll(loadConvMessages("msg_$cid").map { it.copy(convId = cid) })
                   }
                   conversations.value = convList.sortedByDescending { it.updatedAt }
-                  messages.value = msgMap
+                  messages.value = msgList
                   adminLogs.value = loadConvMessages("admin_all_logs")
               }
 
@@ -563,11 +563,11 @@ jobs:
               }
 
               private fun appendMessage(cid: String, item: ChatItem, isIncoming: Boolean) {
-                  val curList = messages.value[cid].orEmpty()
-                  if (curList.any { it.id == item.id }) return
-                  val nextList = curList + item
-                  messages.value = messages.value.toMutableMap().apply { put(cid, nextList) }
-                  persistMessages("msg_$cid", nextList)
+                  val curAll = messages.value
+                  if (curAll.any { it.convId == cid && it.id == item.id }) return
+                  val nextAll = curAll + item.copy(convId = cid)
+                  messages.value = nextAll
+                  persistMessages("msg_$cid", nextAll.filter { it.convId == cid })
 
                   val preview = if (item.voiceB64.isNotBlank()) "Voice message (${item.voiceSec}s)" else item.text
                   val isOpen = activeConvId.value == cid
@@ -585,9 +585,11 @@ jobs:
               }
 
               private fun markAck(cid: String, msgId: String) {
-                  val cur = messages.value[cid].orEmpty().map { if (it.id == msgId) it.copy(ack = true) else it }
-                  messages.value = messages.value.toMutableMap().apply { put(cid, cur) }
-                  persistMessages("msg_$cid", cur)
+                  val nextAll = messages.value.map {
+                      if (it.convId == cid && it.id == msgId) it.copy(ack = true) else it
+                  }
+                  messages.value = nextAll
+                  persistMessages("msg_$cid", nextAll.filter { it.convId == cid })
               }
 
               private fun transmitTcp(ip: String, conv: ConversationMeta, item: ChatItem, isAdminMonitorCopy: Boolean): Boolean {
@@ -1538,9 +1540,9 @@ jobs:
           fun ChatRoomScreen(cid: String) {
               val ctx = LocalContext.current
               val convs by BgramHub.conversations.collectAsState()
-              val msgMap by BgramHub.messages.collectAsState()
+              val allMsgs by BgramHub.messages.collectAsState()
               val conv = convs.firstOrNull { it.convId == cid } ?: ConversationMeta(cid, cid)
-              val list = msgMap[cid].orEmpty()
+              val list = allMsgs.filter { it.convId == cid }
 
               var textIn by remember { mutableStateOf("") }
               var isRecording by remember { mutableStateOf(false) }
