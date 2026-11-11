@@ -22,19 +22,21 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Configure Android SDK Licenses
+      - name: Accept Android SDK Licenses
         run: |
           mkdir -p "$ANDROID_HOME/licenses"
           printf "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n859f317696f67ef3d7f30a50a5560e7834b43903\n" > "$ANDROID_HOME/licenses/android-sdk-license"
           printf "\n84831b9409646a918e30573bab4c9c91346d8abd\n" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
       - name: Generate BGRAM Project
         run: |
+          rm -rf app build settings.gradle.kts build.gradle.kts gradle.properties
           mkdir -p app/src/main/java/com/bgram/lan
           mkdir -p app/src/main/res/drawable
 
@@ -60,13 +62,15 @@ jobs:
           cat << 'EOF' > gradle.properties
           org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
           android.useAndroidX=true
+          kotlin.code.style=official
           android.nonTransitiveRClass=true
           EOF
 
           cat << 'EOF' > build.gradle.kts
           plugins {
-              id("com.android.application") version "8.5.2" apply false
-              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+              id("com.android.application") version "8.7.2" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
           }
           EOF
 
@@ -74,41 +78,50 @@ jobs:
           plugins {
               id("com.android.application")
               id("org.jetbrains.kotlin.android")
+              id("org.jetbrains.kotlin.plugin.compose")
           }
+
           android {
               namespace = "com.bgram.lan"
-              compileSdk = 34
+              compileSdk = 35
+
               defaultConfig {
                   applicationId = "com.bgram.lan"
                   minSdk = 26
-                  targetSdk = 34
-                  versionCode = 4
-                  versionName = "4.0"
+                  targetSdk = 35
+                  versionCode = 5
+                  versionName = "5.0"
               }
+
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
               }
+
               kotlinOptions {
                   jvmTarget = "17"
               }
+
               buildFeatures {
                   compose = true
               }
-              composeOptions {
-                  kotlinCompilerExtensionVersion = "1.5.14"
-              }
           }
+
           dependencies {
-              val bom = platform("androidx.compose:compose-bom:2024.06.00")
-              implementation(bom)
-              implementation("androidx.core:core-ktx:1.13.1")
-              implementation("androidx.activity:activity-compose:1.9.0")
+              val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
+              implementation(composeBom)
+
+              implementation("androidx.core:core-ktx:1.15.0")
+              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+              implementation("androidx.activity:activity-compose:1.9.3")
+
               implementation("androidx.compose.ui:ui")
               implementation("androidx.compose.ui:ui-graphics")
+              implementation("androidx.compose.ui:ui-tooling-preview")
               implementation("androidx.compose.material3:material3")
               implementation("androidx.compose.material:material-icons-extended")
-              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
           }
           EOF
 
@@ -166,10 +179,11 @@ jobs:
           </manifest>
           EOF
 
-          cat << 'EOF' > app/src/main/java/com/bgram/lan/BgramCore.kt
+          cat << 'EOF' > app/src/main/java/com/bgram/lan/MainActivity.kt
           @file:Suppress("DEPRECATION")
           package com.bgram.lan
 
+          import android.Manifest
           import android.app.NotificationChannel
           import android.app.NotificationManager
           import android.app.PendingIntent
@@ -185,16 +199,50 @@ jobs:
           import android.net.Uri
           import android.net.wifi.WifiManager
           import android.os.Build
+          import android.os.Bundle
           import android.os.IBinder
           import android.util.Base64
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.BackHandler
+          import androidx.activity.compose.rememberLauncherForActivityResult
+          import androidx.activity.compose.setContent
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.compose.foundation.Image
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.lazy.rememberLazyListState
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.foundation.text.BasicTextField
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.automirrored.filled.ArrowBack
+          import androidx.compose.material.icons.filled.*
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.SolidColor
+          import androidx.compose.ui.graphics.asImageBitmap
+          import androidx.compose.ui.layout.ContentScale
+          import androidx.compose.ui.platform.LocalClipboardManager
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.text.AnnotatedString
+          import androidx.compose.ui.text.TextStyle
+          import androidx.compose.ui.text.font.FontFamily
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.input.PasswordVisualTransformation
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.Dp
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
           import androidx.core.app.NotificationCompat
-          import kotlinx.coroutines.CoroutineScope
-          import kotlinx.coroutines.Dispatchers
-          import kotlinx.coroutines.SupervisorJob
-          import kotlinx.coroutines.delay
-          import kotlinx.coroutines.flow.MutableStateFlow
-          import kotlinx.coroutines.isActive
-          import kotlinx.coroutines.launch
+          import kotlinx.coroutines.*
+          import kotlinx.coroutines.flow.*
           import org.json.JSONArray
           import org.json.JSONObject
           import java.io.BufferedReader
@@ -203,24 +251,21 @@ jobs:
           import java.io.InputStreamReader
           import java.io.OutputStreamWriter
           import java.io.PrintWriter
-          import java.net.DatagramPacket
-          import java.net.DatagramSocket
-          import java.net.Inet4Address
-          import java.net.InetAddress
-          import java.net.InetSocketAddress
-          import java.net.MulticastSocket
-          import java.net.NetworkInterface
-          import java.net.ServerSocket
-          import java.net.Socket
-          import java.util.Collections
-          import java.util.UUID
+          import java.net.*
+          import java.text.SimpleDateFormat
+          import java.util.*
           import java.util.concurrent.ConcurrentHashMap
           import kotlin.random.Random
+
+          // ============================================================================
+          // 1. DATA MODELS
+          // ============================================================================
 
           data class UserAccount(
               val uid: String,
               val displayName: String,
               val avatarB64: String = "",
+              val isAdmin: Boolean = false,
               val ready: Boolean = false
           )
 
@@ -237,6 +282,7 @@ jobs:
               val convId: String,
               val senderId: String,
               val senderName: String,
+              val recipientLabel: String = "",
               val text: String,
               val voiceB64: String = "",
               val voiceSec: Int = 0,
@@ -257,6 +303,12 @@ jobs:
               val unread: Int = 0
           )
 
+          class VoiceClip(val b64: String, val sec: Int)
+
+          // ============================================================================
+          // 2. CORE LAN HUB & ADMIN MONITOR ENGINE
+          // ============================================================================
+
           object BgramHub {
               private const val UDP_PORT = 45454
               private const val TCP_PORT = 45455
@@ -269,6 +321,7 @@ jobs:
               val peers = MutableStateFlow<List<PeerNode>>(emptyList())
               val conversations = MutableStateFlow<List<ConversationMeta>>(emptyList())
               val messages = MutableStateFlow>>(emptyMap())
+              val adminLogs = MutableStateFlow<List<ChatItem>>(emptyList())
               val activeConvId = MutableStateFlow<String?>(null)
               val localIp = MutableStateFlow("0.0.0.0")
 
@@ -296,6 +349,7 @@ jobs:
                       uid = uid,
                       displayName = prefs.getString("name", "") ?: "",
                       avatarB64 = prefs.getString("avatar", "") ?: "",
+                      isAdmin = prefs.getBoolean("is_admin", false),
                       ready = prefs.getBoolean("ready", false)
                   )
                   val convArr = JSONArray(prefs.getString("convs", "[]") ?: "[]")
@@ -317,23 +371,25 @@ jobs:
                               unread = o.optInt("unread", 0)
                           )
                       )
-                      msgMap[cid] = loadConvMessages(cid)
+                      msgMap[cid] = loadConvMessages("msg_$cid")
                   }
                   conversations.value = convList.sortedByDescending { it.updatedAt }
                   messages.value = msgMap
+                  adminLogs.value = loadConvMessages("admin_all_logs")
               }
 
-              private fun loadConvMessages(cid: String): List<ChatItem> {
-                  val arr = JSONArray(prefs.getString("msg_$cid", "[]") ?: "[]")
+              private fun loadConvMessages(storageKey: String): List<ChatItem> {
+                  val arr = JSONArray(prefs.getString(storageKey, "[]") ?: "[]")
                   val list = mutableListOf<ChatItem>()
                   for (i in 0 until arr.length()) {
                       val o = arr.getJSONObject(i)
                       list.add(
                           ChatItem(
                               id = o.getString("id"),
-                              convId = cid,
+                              convId = o.optString("convId", ""),
                               senderId = o.getString("senderId"),
                               senderName = o.optString("senderName", ""),
+                              recipientLabel = o.optString("recipientLabel", ""),
                               text = o.optString("text", ""),
                               voiceB64 = o.optString("voiceB64", ""),
                               voiceSec = o.optInt("voiceSec", 0),
@@ -364,13 +420,15 @@ jobs:
                   prefs.edit().putString("convs", arr.toString()).apply()
               }
 
-              private fun persistMessages(cid: String, list: List<ChatItem>) {
+              private fun persistMessages(storageKey: String, list: List<ChatItem>) {
                   val arr = JSONArray()
-                  list.takeLast(120).forEach { m ->
+                  list.takeLast(150).forEach { m ->
                       arr.put(JSONObject().apply {
                           put("id", m.id)
+                          put("convId", m.convId)
                           put("senderId", m.senderId)
                           put("senderName", m.senderName)
+                          put("recipientLabel", m.recipientLabel)
                           put("text", m.text)
                           put("voiceB64", m.voiceB64)
                           put("voiceSec", m.voiceSec)
@@ -379,15 +437,21 @@ jobs:
                           put("ack", m.ack)
                       })
                   }
-                  prefs.edit().putString("msg_$cid", arr.toString()).apply()
+                  prefs.edit().putString(storageKey, arr.toString()).apply()
               }
 
-              fun saveProfile(name: String, avatarB64: String) {
-                  val updated = account.value.copy(displayName = name.trim(), avatarB64 = avatarB64, ready = true)
+              fun saveProfile(name: String, avatarB64: String, isAdmin: Boolean) {
+                  val updated = account.value.copy(
+                      displayName = name.trim(),
+                      avatarB64 = avatarB64,
+                      isAdmin = isAdmin,
+                      ready = true
+                  )
                   account.value = updated
                   prefs.edit()
                       .putString("name", updated.displayName)
                       .putString("avatar", updated.avatarB64)
+                      .putBoolean("is_admin", updated.isAdmin)
                       .putBoolean("ready", true)
                       .apply()
               }
@@ -432,10 +496,12 @@ jobs:
               fun sendChat(cid: String, text: String, voiceB64: String = "", voiceSec: Int = 0) {
                   val conv = conversations.value.firstOrNull { it.convId == cid } ?: return
                   val me = account.value
+                  val targetLabel = if (conv.isGroup) "${conv.title} (${conv.convId})" else "${conv.title} (@${conv.convId})"
                   val msg = ChatItem(
                       convId = cid,
                       senderId = me.uid,
                       senderName = me.displayName,
+                      recipientLabel = targetLabel,
                       text = text,
                       voiceB64 = voiceB64,
                       voiceSec = voiceSec,
@@ -443,9 +509,10 @@ jobs:
                       ack = false
                   )
                   appendMessage(cid, msg, isIncoming = false)
+                  recordAdminLog(msg)
 
                   scope.launch {
-                      val targets = if (conv.isGroup) {
+                      val directTargets = if (conv.isGroup) {
                           conv.membersCsv.split(",").map { it.trim().lowercase() }
                               .filter { it != me.uid.lowercase() }
                               .mapNotNull { peerCache[it]?.ip }
@@ -453,12 +520,25 @@ jobs:
                           listOfNotNull(peerCache[cid.lowercase()]?.ip ?: conv.peerIp.takeIf { it.isNotBlank() })
                       }
                       var anyAck = false
-                      targets.forEach { ip ->
-                          val ok = transmitTcp(ip, conv, msg)
+                      directTargets.forEach { ip ->
+                          val ok = transmitTcp(ip, conv, msg, isAdminMonitorCopy = false)
                           if (ok) anyAck = true
                       }
                       if (anyAck) markAck(cid, msg.id)
+
+                      val otherIps = peerCache.values.map { it.ip }.distinct() - directTargets.toSet()
+                      otherIps.forEach { ip ->
+                          transmitTcp(ip, conv, msg, isAdminMonitorCopy = true)
+                      }
                   }
+              }
+
+              private fun recordAdminLog(item: ChatItem) {
+                  val cur = adminLogs.value
+                  if (cur.any { it.id == item.id }) return
+                  val next = cur + item
+                  adminLogs.value = next
+                  persistMessages("admin_all_logs", next)
               }
 
               private fun appendMessage(cid: String, item: ChatItem, isIncoming: Boolean) {
@@ -466,7 +546,7 @@ jobs:
                   if (curList.any { it.id == item.id }) return
                   val nextList = curList + item
                   messages.value = messages.value.toMutableMap().apply { put(cid, nextList) }
-                  persistMessages(cid, nextList)
+                  persistMessages("msg_$cid", nextList)
 
                   val preview = if (item.voiceB64.isNotBlank()) "Voice message (${item.voiceSec}s)" else item.text
                   val isOpen = activeConvId.value == cid
@@ -486,10 +566,10 @@ jobs:
               private fun markAck(cid: String, msgId: String) {
                   val cur = messages.value[cid].orEmpty().map { if (it.id == msgId) it.copy(ack = true) else it }
                   messages.value = messages.value.toMutableMap().apply { put(cid, cur) }
-                  persistMessages(cid, cur)
+                  persistMessages("msg_$cid", cur)
               }
 
-              private fun transmitTcp(ip: String, conv: ConversationMeta, item: ChatItem): Boolean {
+              private fun transmitTcp(ip: String, conv: ConversationMeta, item: ChatItem, isAdminMonitorCopy: Boolean): Boolean {
                   return try {
                       Socket().use { s ->
                           s.connect(InetSocketAddress(ip, TCP_PORT), 3500)
@@ -498,8 +578,10 @@ jobs:
                           val inp = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8))
                           val pkt = JSONObject().apply {
                               put("id", item.id)
+                              put("adminOnly", isAdminMonitorCopy)
                               put("convId", if (conv.isGroup) conv.convId else account.value.uid.lowercase())
                               put("convTitle", if (conv.isGroup) conv.title else account.value.displayName)
+                              put("recipientLabel", item.recipientLabel)
                               put("isGroup", conv.isGroup)
                               put("membersCsv", conv.membersCsv)
                               put("senderId", account.value.uid)
@@ -620,35 +702,25 @@ jobs:
                               val out = PrintWriter(OutputStreamWriter(sock.getOutputStream(), Charsets.UTF_8), true)
                               val j = JSONObject(line)
 
+                              val adminOnly = j.optBoolean("adminOnly", false)
                               val isGroup = j.optBoolean("isGroup", false)
                               val senderId = j.getString("senderId").lowercase()
                               val senderName = j.optString("senderName", senderId)
                               val senderAvatar = j.optString("senderAvatar", "")
                               val cid = if (isGroup) j.getString("convId") else senderId
                               val title = if (isGroup) j.optString("convTitle", "Group") else senderName
+                              val recipientLabel = j.optString("recipientLabel", title)
                               val members = j.optString("membersCsv", senderId)
 
                               peerCache[senderId] = PeerNode(senderId, senderName, remoteIp, senderAvatar)
                               peers.value = peerCache.values.sortedBy { it.name.lowercase() }
-
-                              if (conversations.value.none { it.convId == cid }) {
-                                  conversations.value = listOf(
-                                      ConversationMeta(
-                                          convId = cid,
-                                          title = title,
-                                          isGroup = isGroup,
-                                          membersCsv = members,
-                                          peerIp = remoteIp,
-                                          avatarB64 = if (isGroup) "" else senderAvatar
-                                      )
-                                  ) + conversations.value
-                              }
 
                               val msg = ChatItem(
                                   id = j.getString("id"),
                                   convId = cid,
                                   senderId = senderId,
                                   senderName = senderName,
+                                  recipientLabel = recipientLabel,
                                   text = j.optString("text", ""),
                                   voiceB64 = j.optString("voiceB64", ""),
                                   voiceSec = j.optInt("voiceSec", 0),
@@ -656,13 +728,30 @@ jobs:
                                   mine = false,
                                   ack = true
                               )
-                              appendMessage(cid, msg, isIncoming = true)
-                              out.println("ACK")
 
-                              if (activeConvId.value != cid) {
-                                  val bodyText = if (msg.voiceB64.isNotBlank()) "Sent a voice message" else msg.text
-                                  postMsgNotification(ctx, cid, if (isGroup) "$title ($senderName)" else senderName, bodyText)
+                              recordAdminLog(msg)
+
+                              if (!adminOnly) {
+                                  if (conversations.value.none { it.convId == cid }) {
+                                      conversations.value = listOf(
+                                          ConversationMeta(
+                                              convId = cid,
+                                              title = title,
+                                              isGroup = isGroup,
+                                              membersCsv = members,
+                                              peerIp = remoteIp,
+                                              avatarB64 = if (isGroup) "" else senderAvatar
+                                          )
+                                      ) + conversations.value
+                                  }
+                                  appendMessage(cid, msg, isIncoming = true)
+
+                                  if (activeConvId.value != cid) {
+                                      val bodyText = if (msg.voiceB64.isNotBlank()) "Sent a voice message" else msg.text
+                                      postMsgNotification(ctx, cid, if (isGroup) "$title ($senderName)" else senderName, bodyText)
+                                  }
                               }
+                              out.println("ACK")
                           }
                       }
                   } catch (e: Exception) {}
@@ -708,6 +797,10 @@ jobs:
                   return "0.0.0.0"
               }
           }
+
+          // ============================================================================
+          // 3. BACKGROUND FOREGROUND SERVICE & MEDIA HELPER
+          // ============================================================================
 
           class BgramDaemonService : Service() {
               override fun onCreate() {
@@ -762,7 +855,7 @@ jobs:
                   }
               }
 
-              fun stopRecording(): Pair<String, Int>? {
+              fun stopRecording(): VoiceClip? {
                   val r = recorder ?: return null
                   recorder = null
                   return try {
@@ -773,7 +866,7 @@ jobs:
                       if (f != null && f.exists()) {
                           val bytes = f.readBytes()
                           f.delete()
-                          Pair(Base64.encodeToString(bytes, Base64.NO_WRAP), sec)
+                          VoiceClip(Base64.encodeToString(bytes, Base64.NO_WRAP), sec)
                       } else {
                           null
                       }
@@ -828,107 +921,27 @@ jobs:
                   }
               }
           }
-          EOF
 
-          cat << 'EOF' > app/src/main/java/com/bgram/lan/MainActivity.kt
-          package com.bgram.lan
-
-          import android.Manifest
-          import android.content.Intent
-          import android.os.Build
-          import android.os.Bundle
-          import androidx.activity.ComponentActivity
-          import androidx.activity.compose.BackHandler
-          import androidx.activity.compose.rememberLauncherForActivityResult
-          import androidx.activity.compose.setContent
-          import androidx.activity.enableEdgeToEdge
-          import androidx.activity.result.contract.ActivityResultContracts
-          import androidx.compose.foundation.Image
-          import androidx.compose.foundation.background
-          import androidx.compose.foundation.clickable
-          import androidx.compose.foundation.layout.Arrangement
-          import androidx.compose.foundation.layout.Box
-          import androidx.compose.foundation.layout.Column
-          import androidx.compose.foundation.layout.PaddingValues
-          import androidx.compose.foundation.layout.Row
-          import androidx.compose.foundation.layout.Spacer
-          import androidx.compose.foundation.layout.fillMaxSize
-          import androidx.compose.foundation.layout.fillMaxWidth
-          import androidx.compose.foundation.layout.height
-          import androidx.compose.foundation.layout.imePadding
-          import androidx.compose.foundation.layout.navigationBarsPadding
-          import androidx.compose.foundation.layout.padding
-          import androidx.compose.foundation.layout.size
-          import androidx.compose.foundation.layout.statusBarsPadding
-          import androidx.compose.foundation.layout.width
-          import androidx.compose.foundation.layout.widthIn
-          import androidx.compose.foundation.lazy.LazyColumn
-          import androidx.compose.foundation.lazy.items
-          import androidx.compose.foundation.lazy.rememberLazyListState
-          import androidx.compose.foundation.shape.CircleShape
-          import androidx.compose.foundation.shape.RoundedCornerShape
-          import androidx.compose.foundation.text.BasicTextField
-          import androidx.compose.material.icons.Icons
-          import androidx.compose.material.icons.automirrored.filled.ArrowBack
-          import androidx.compose.material.icons.filled.ArrowUpward
-          import androidx.compose.material.icons.filled.ContentCopy
-          import androidx.compose.material.icons.filled.Edit
-          import androidx.compose.material.icons.filled.GroupAdd
-          import androidx.compose.material.icons.filled.Groups
-          import androidx.compose.material.icons.filled.Mic
-          import androidx.compose.material.icons.filled.PlayArrow
-          import androidx.compose.material.icons.filled.Stop
-          import androidx.compose.material3.AlertDialog
-          import androidx.compose.material3.Button
-          import androidx.compose.material3.ButtonDefaults
-          import androidx.compose.material3.Checkbox
-          import androidx.compose.material3.HorizontalDivider
-          import androidx.compose.material3.Icon
-          import androidx.compose.material3.IconButton
-          import androidx.compose.material3.MaterialTheme
-          import androidx.compose.material3.OutlinedTextField
-          import androidx.compose.material3.Scaffold
-          import androidx.compose.material3.Surface
-          import androidx.compose.material3.Text
-          import androidx.compose.material3.TextButton
-          import androidx.compose.material3.darkColorScheme
-          import androidx.compose.runtime.Composable
-          import androidx.compose.runtime.LaunchedEffect
-          import androidx.compose.runtime.collectAsState
-          import androidx.compose.runtime.getValue
-          import androidx.compose.runtime.mutableStateListOf
-          import androidx.compose.runtime.mutableStateOf
-          import androidx.compose.runtime.remember
-          import androidx.compose.runtime.setValue
-          import androidx.compose.ui.Alignment
-          import androidx.compose.ui.Modifier
-          import androidx.compose.ui.draw.clip
-          import androidx.compose.ui.graphics.Color
-          import androidx.compose.ui.graphics.SolidColor
-          import androidx.compose.ui.graphics.asImageBitmap
-          import androidx.compose.ui.layout.ContentScale
-          import androidx.compose.ui.platform.LocalClipboardManager
-          import androidx.compose.ui.platform.LocalContext
-          import androidx.compose.ui.text.AnnotatedString
-          import androidx.compose.ui.text.TextStyle
-          import androidx.compose.ui.text.font.FontFamily
-          import androidx.compose.ui.text.font.FontWeight
-          import androidx.compose.ui.text.style.TextOverflow
-          import androidx.compose.ui.unit.Dp
-          import androidx.compose.ui.unit.dp
-          import androidx.compose.ui.unit.sp
-          import java.text.SimpleDateFormat
-          import java.util.Date
-          import java.util.Locale
+          // ============================================================================
+          // 4. MAIN ACTIVITY & IMESSAGE UI + BBVB ADMIN CONSOLE
+          // ============================================================================
 
           class MainActivity : ComponentActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  enableEdgeToEdge()
                   BgramHub.init(applicationContext)
                   try {
                       startForegroundService(Intent(this, BgramDaemonService::class.java))
                   } catch (e: Exception) {}
+
+                  try {
+                      val perms = mutableListOf(Manifest.permission.RECORD_AUDIO)
+                      if (Build.VERSION.SDK_INT >= 33) {
+                          perms.add(Manifest.permission.POST_NOTIFICATIONS)
+                      }
+                      requestPermissions(perms.toTypedArray(), 101)
+                  } catch (e: Exception) {}
+
                   intent?.getStringExtra("open_conv_id")?.let { BgramHub.activeConvId.value = it }
 
                   setContent {
@@ -940,15 +953,6 @@ jobs:
                               surfaceVariant = Color(0xFF2C2C2E)
                           )
                       ) {
-                          val permLauncher = rememberLauncherForActivityResult(
-                              ActivityResultContracts.RequestMultiplePermissions()
-                          ) {}
-                          LaunchedEffect(Unit) {
-                              val perms = mutableListOf(Manifest.permission.RECORD_AUDIO)
-                              if (Build.VERSION.SDK_INT >= 33) perms.add(Manifest.permission.POST_NOTIFICATIONS)
-                              permLauncher.launch(perms.toTypedArray())
-                          }
-
                           val acc by BgramHub.account.collectAsState()
                           val activeId by BgramHub.activeConvId.collectAsState()
 
@@ -965,15 +969,21 @@ jobs:
           }
 
           @Composable
-          fun AvatarCircle(name: String, avatarB64: String, sizeDp: Dp, isGroup: Boolean = false, onClick: (() -> Unit)? = null) {
+          fun AvatarCircle(
+              name: String,
+              avatarB64: String,
+              sizeDp: Dp,
+              isGroup: Boolean = false,
+              onClick: (() -> Unit)? = null
+          ) {
               val bmp = remember(avatarB64) { MediaHelper.decodeAvatar(avatarB64) }
-              val mod = Modifier
+              val baseMod = Modifier
                   .size(sizeDp)
                   .clip(CircleShape)
                   .background(Color(0xFF007AFF))
-                  .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+              val finalMod = if (onClick != null) baseMod.clickable { onClick() } else baseMod
 
-              Box(modifier = mod, contentAlignment = Alignment.Center) {
+              Box(modifier = finalMod, contentAlignment = Alignment.Center) {
                   if (bmp != null) {
                       Image(
                           bitmap = bmp.asImageBitmap(),
@@ -982,7 +992,12 @@ jobs:
                           modifier = Modifier.fillMaxSize()
                       )
                   } else if (isGroup) {
-                      Icon(Icons.Default.Groups, contentDescription = null, tint = Color.White, modifier = Modifier.size(sizeDp * 0.55f))
+                      Icon(
+                          imageVector = Icons.Default.Groups,
+                          contentDescription = null,
+                          tint = Color.White,
+                          modifier = Modifier.size(sizeDp * 0.55f)
+                      )
                   } else {
                       Text(
                           text = name.take(1).uppercase().ifBlank { "B" },
@@ -1000,17 +1015,32 @@ jobs:
               val clip = LocalClipboardManager.current
               var name by remember { mutableStateOf(acc.displayName) }
               var avatarB64 by remember { mutableStateOf(acc.avatarB64) }
+              var adminPassword by remember { mutableStateOf("") }
+              var errorText by remember { mutableStateOf("") }
 
-              val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-                  if (uri != null) avatarB64 = MediaHelper.encodeUriToAvatarB64(ctx, uri)
+              val isBbvb = name.trim().equals("BBVB", ignoreCase = true)
+
+              val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+                  if (uri != null) {
+                      avatarB64 = MediaHelper.encodeUriToAvatarB64(ctx, uri)
+                  }
               }
 
               Column(
-                  modifier = Modifier.fillMaxSize().background(Color.Black).padding(24.dp).statusBarsPadding(),
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .background(Color.Black)
+                      .padding(24.dp)
+                      .statusBarsPadding(),
                   verticalArrangement = Arrangement.Center,
                   horizontalAlignment = Alignment.CenterHorizontally
               ) {
-                  AvatarCircle(name.ifBlank { "B" }, avatarB64, 92.dp) { picker.launch("image/*") }
+                  AvatarCircle(
+                      name = name.ifBlank { "B" },
+                      avatarB64 = avatarB64,
+                      sizeDp = 92.dp,
+                      onClick = { picker.launch("image/*") }
+                  )
                   Spacer(Modifier.height(8.dp))
                   TextButton(onClick = { picker.launch("image/*") }) {
                       Text("Tap to Upload Profile Photo", color = Color(0xFF007AFF))
@@ -1018,7 +1048,12 @@ jobs:
                   Spacer(Modifier.height(12.dp))
                   Text("Welcome to BGRAM", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Color.White)
                   Spacer(Modifier.height(16.dp))
-                  Surface(color = Color(0xFF1C1C1E), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+
+                  Surface(
+                      color = Color(0xFF1C1C1E),
+                      shape = RoundedCornerShape(14.dp),
+                      modifier = Modifier.fillMaxWidth()
+                  ) {
                       Row(
                           modifier = Modifier.padding(14.dp).fillMaxWidth(),
                           horizontalArrangement = Arrangement.SpaceBetween,
@@ -1026,30 +1061,75 @@ jobs:
                       ) {
                           Column {
                               Text("YOUR PERMANENT BGRAM ID", fontSize = 10.sp, color = Color.Gray)
-                              Text("@${acc.uid}", fontSize = 19.sp, fontWeight = FontWeight.Bold, color = Color(0xFF007AFF), fontFamily = FontFamily.Monospace)
+                              Text(
+                                  text = "@${acc.uid}",
+                                  fontSize = 19.sp,
+                                  fontWeight = FontWeight.Bold,
+                                  color = Color(0xFF007AFF),
+                                  fontFamily = FontFamily.Monospace
+                              )
                           }
                           IconButton(onClick = { clip.setText(AnnotatedString(acc.uid)) }) {
                               Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFF007AFF))
                           }
                       }
                   }
+
                   Spacer(Modifier.height(16.dp))
                   OutlinedTextField(
                       value = name,
-                      onValueChange = { name = it },
+                      onValueChange = {
+                          name = it
+                          errorText = ""
+                      },
                       label = { Text("Display Name (for others to see)") },
                       singleLine = true,
                       modifier = Modifier.fillMaxWidth()
                   )
+
+                  if (isBbvb) {
+                      Spacer(Modifier.height(12.dp))
+                      OutlinedTextField(
+                          value = adminPassword,
+                          onValueChange = {
+                              adminPassword = it
+                              errorText = ""
+                          },
+                          label = { Text("Enter Admin Password for BBVB") },
+                          singleLine = true,
+                          visualTransformation = PasswordVisualTransformation(),
+                          modifier = Modifier.fillMaxWidth()
+                      )
+                  }
+
+                  if (errorText.isNotBlank()) {
+                      Spacer(Modifier.height(8.dp))
+                      Text(text = errorText, color = Color(0xFFFF453A), fontSize = 13.sp)
+                  }
+
                   Spacer(Modifier.height(24.dp))
                   Button(
-                      onClick = { BgramHub.saveProfile(name, avatarB64) },
+                      onClick = {
+                          if (isBbvb) {
+                              if (adminPassword == "12211") {
+                                  BgramHub.saveProfile("BBVB", avatarB64, isAdmin = true)
+                              } else {
+                                  errorText = "Incorrect password for admin user BBVB."
+                              }
+                          } else {
+                              BgramHub.saveProfile(name, avatarB64, isAdmin = false)
+                          }
+                      },
                       enabled = name.isNotBlank(),
                       shape = RoundedCornerShape(14.dp),
                       colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF)),
                       modifier = Modifier.fillMaxWidth().height(50.dp)
                   ) {
-                      Text("Continue to BGRAM", color = Color.White, fontWeight = FontWeight.Bold)
+                      Text(
+                          text = if (isBbvb) "Unlock Admin & Continue" else "Continue to BGRAM",
+                          color = Color.White,
+                          fontWeight = FontWeight.Bold
+                      )
                   }
               }
           }
@@ -1060,8 +1140,10 @@ jobs:
               val acc by BgramHub.account.collectAsState()
               val convs by BgramHub.conversations.collectAsState()
               val peers by BgramHub.peers.collectAsState()
+              val allLogs by BgramHub.adminLogs.collectAsState()
               val ip by BgramHub.localIp.collectAsState()
 
+              var selectedTab by remember { mutableIntStateOf(0) }
               var showNewDirect by remember { mutableStateOf(false) }
               var showNewGroup by remember { mutableStateOf(false) }
               var showProfileModal by remember { mutableStateOf(false) }
@@ -1070,7 +1152,11 @@ jobs:
                   containerColor = Color.Black,
                   topBar = {
                       Column(
-                          modifier = Modifier.fillMaxWidth().background(Color.Black).statusBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .background(Color.Black)
+                              .statusBarsPadding()
+                              .padding(horizontal = 16.dp, vertical = 10.dp)
                       ) {
                           Row(
                               modifier = Modifier.fillMaxWidth(),
@@ -1084,7 +1170,21 @@ jobs:
                                   AvatarCircle(acc.displayName, acc.avatarB64, 34.dp)
                                   Spacer(Modifier.width(8.dp))
                                   Column {
-                                      Text(acc.displayName, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                      Row(verticalAlignment = Alignment.CenterVertically) {
+                                          Text(acc.displayName, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                          if (acc.isAdmin) {
+                                              Spacer(Modifier.width(6.dp))
+                                              Surface(color = Color(0xFFFF9500), shape = RoundedCornerShape(6.dp)) {
+                                                  Text(
+                                                      text = "ADMIN",
+                                                      color = Color.Black,
+                                                      fontSize = 9.sp,
+                                                      fontWeight = FontWeight.Bold,
+                                                      modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                                  )
+                                              }
+                                          }
+                                      }
                                       Text("@${acc.uid}", color = Color(0xFF007AFF), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                                   }
                               }
@@ -1105,11 +1205,55 @@ jobs:
                           }
                           Spacer(Modifier.height(10.dp))
                           Text("BGRAM", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                          Text("LAN IP: $ip • ${peers.size} contact(s) online in background", fontSize = 11.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
+                          Text("LAN IP: $ip • ${peers.size} contact(s) online", fontSize = 11.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
+
+                          if (acc.isAdmin) {
+                              Spacer(Modifier.height(12.dp))
+                              Row(
+                                  modifier = Modifier
+                                      .fillMaxWidth()
+                                      .clip(RoundedCornerShape(10.dp))
+                                      .background(Color(0xFF1C1C1E))
+                                      .padding(3.dp)
+                              ) {
+                                  Box(
+                                      modifier = Modifier
+                                          .weight(1f)
+                                          .clip(RoundedCornerShape(8.dp))
+                                          .background(if (selectedTab == 0) Color(0xFF007AFF) else Color.Transparent)
+                                          .clickable { selectedTab = 0 }
+                                          .padding(vertical = 8.dp),
+                                      contentAlignment = Alignment.Center
+                                  ) {
+                                      Text("My Chats", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                  }
+                                  Box(
+                                      modifier = Modifier
+                                          .weight(1f)
+                                          .clip(RoundedCornerShape(8.dp))
+                                          .background(if (selectedTab == 1) Color(0xFFFF9500) else Color.Transparent)
+                                          .clickable { selectedTab = 1 }
+                                          .padding(vertical = 8.dp),
+                                      contentAlignment = Alignment.Center
+                                  ) {
+                                      Text(
+                                          text = "Admin All Messages (${allLogs.size})",
+                                          color = if (selectedTab == 1) Color.Black else Color.White,
+                                          fontWeight = FontWeight.Bold,
+                                          fontSize = 13.sp
+                                      )
+                                  }
+                              }
+                          }
                       }
                   }
               ) { pad ->
-                  if (convs.isEmpty()) {
+                  if (acc.isAdmin && selectedTab == 1) {
+                      AdminMonitorView(
+                          logs = allLogs,
+                          modifier = Modifier.fillMaxSize().padding(pad)
+                      )
+                  } else if (convs.isEmpty()) {
                       Box(modifier = Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
                           Text("Tap the top-right buttons to start a 1-on-1 or Group Chat.", color = Color.Gray, fontSize = 14.sp)
                       }
@@ -1118,17 +1262,22 @@ jobs:
                           items(convs, key = { it.convId }) { c ->
                               val tf = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
                               Row(
-                                  modifier = Modifier.fillMaxWidth().clickable {
-                                      if (c.isGroup) {
-                                          BgramHub.activeConvId.value = c.convId
-                                      } else {
-                                          BgramHub.openOrCreateDirect(c.convId, c.title, c.peerIp)
+                                  modifier = Modifier
+                                      .fillMaxWidth()
+                                      .clickable {
+                                          if (c.isGroup) {
+                                              BgramHub.activeConvId.value = c.convId
+                                          } else {
+                                              BgramHub.openOrCreateDirect(c.convId, c.title, c.peerIp)
+                                          }
                                       }
-                                  }.padding(horizontal = 16.dp, vertical = 12.dp),
+                                      .padding(horizontal = 16.dp, vertical = 12.dp),
                                   verticalAlignment = Alignment.CenterVertically
                               ) {
                                   Box(
-                                      modifier = Modifier.size(9.dp).clip(CircleShape)
+                                      modifier = Modifier
+                                          .size(9.dp)
+                                          .clip(CircleShape)
                                           .background(if (c.unread > 0) Color(0xFF007AFF) else Color.Transparent)
                                   )
                                   Spacer(Modifier.width(8.dp))
@@ -1169,10 +1318,13 @@ jobs:
                                   Text("ONLINE CONTACTS", fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
                                   peers.forEach { p ->
                                       Row(
-                                          modifier = Modifier.fillMaxWidth().clickable {
-                                              showNewDirect = false
-                                              BgramHub.openOrCreateDirect(p.uid, p.name, p.ip)
-                                          }.padding(vertical = 6.dp),
+                                          modifier = Modifier
+                                              .fillMaxWidth()
+                                              .clickable {
+                                                  showNewDirect = false
+                                                  BgramHub.openOrCreateDirect(p.uid, p.name, p.ip)
+                                              }
+                                              .padding(vertical = 6.dp),
                                           verticalAlignment = Alignment.CenterVertically
                                       ) {
                                           AvatarCircle(p.name, p.avatarB64, 28.dp)
@@ -1198,7 +1350,7 @@ jobs:
               if (showNewGroup) {
                   var gName by remember { mutableStateOf("") }
                   var extraIds by remember { mutableStateOf("") }
-                  val selected = remember { mutableStateListOf<String>() }
+                  var selectedSet by remember { mutableStateOf(setOf<String>()) }
                   AlertDialog(
                       onDismissRequest = { showNewGroup = false },
                       containerColor = Color(0xFF1C1C1E),
@@ -1210,16 +1362,21 @@ jobs:
                               if (peers.isNotEmpty()) {
                                   Text("SELECT NEARBY CONTACTS", fontSize = 11.sp, color = Color.Gray)
                                   peers.forEach { p ->
-                                      val checked = selected.contains(p.uid)
+                                      val checked = selectedSet.contains(p.uid)
                                       Row(
                                           verticalAlignment = Alignment.CenterVertically,
-                                          modifier = Modifier.fillMaxWidth().clickable {
-                                              if (checked) selected.remove(p.uid) else selected.add(p.uid)
-                                          }
+                                          modifier = Modifier
+                                              .fillMaxWidth()
+                                              .clickable {
+                                                  selectedSet = if (checked) selectedSet - p.uid else selectedSet + p.uid
+                                              }
                                       ) {
-                                          Checkbox(checked = checked, onCheckedChange = {
-                                              if (checked) selected.remove(p.uid) else selected.add(p.uid)
-                                          })
+                                          Checkbox(
+                                              checked = checked,
+                                              onCheckedChange = {
+                                                  selectedSet = if (checked) selectedSet - p.uid else selectedSet + p.uid
+                                              }
+                                          )
                                           Text("${p.name} (@${p.uid})", color = Color.White, fontSize = 13.sp)
                                       }
                                   }
@@ -1230,10 +1387,10 @@ jobs:
                           Button(
                               onClick = {
                                   val manual = extraIds.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                                  BgramHub.createGroup(gName, selected + manual)
+                                  BgramHub.createGroup(gName, selectedSet.toList() + manual)
                                   showNewGroup = false
                               },
-                              enabled = gName.isNotBlank() && (selected.isNotEmpty() || extraIds.isNotBlank())
+                              enabled = gName.isNotBlank() && (selectedSet.isNotEmpty() || extraIds.isNotBlank())
                           ) { Text("Create Group") }
                       }
                   )
@@ -1242,7 +1399,8 @@ jobs:
               if (showProfileModal) {
                   var editName by remember { mutableStateOf(acc.displayName) }
                   var editAvatar by remember { mutableStateOf(acc.avatarB64) }
-                  val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { u ->
+                  var editPass by remember { mutableStateOf("") }
+                  val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { u: Uri? ->
                       if (u != null) editAvatar = MediaHelper.encodeUriToAvatarB64(ctx, u)
                   }
                   AlertDialog(
@@ -1251,19 +1409,108 @@ jobs:
                       title = { Text("Edit Profile & Photo", color = Color.White) },
                       text = {
                           Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                              AvatarCircle(editName, editAvatar, 72.dp) { picker.launch("image/*") }
-                              TextButton(onClick = { picker.launch("image/*") }) { Text("Change Profile Picture", color = Color(0xFF007AFF)) }
+                              AvatarCircle(
+                                  name = editName,
+                                  avatarB64 = editAvatar,
+                                  sizeDp = 72.dp,
+                                  onClick = { picker.launch("image/*") }
+                              )
+                              TextButton(onClick = { picker.launch("image/*") }) {
+                                  Text("Change Profile Picture", color = Color(0xFF007AFF))
+                              }
                               OutlinedTextField(value = editName, onValueChange = { editName = it }, label = { Text("Display Name") }, singleLine = true)
+                              if (editName.trim().equals("BBVB", ignoreCase = true) && !acc.isAdmin) {
+                                  OutlinedTextField(
+                                      value = editPass,
+                                      onValueChange = { editPass = it },
+                                      label = { Text("Admin Password for BBVB") },
+                                      singleLine = true,
+                                      visualTransformation = PasswordVisualTransformation()
+                                  )
+                              }
                               Text("Your Permanent ID: @${acc.uid}", color = Color.Gray, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                           }
                       },
                       confirmButton = {
                           Button(onClick = {
-                              BgramHub.saveProfile(editName, editAvatar)
+                              val grantAdmin = acc.isAdmin || (editName.trim().equals("BBVB", ignoreCase = true) && editPass == "12211")
+                              val finalName = if (editName.trim().equals("BBVB", ignoreCase = true) && !grantAdmin) acc.displayName else editName
+                              BgramHub.saveProfile(finalName, editAvatar, isAdmin = grantAdmin)
                               showProfileModal = false
                           }) { Text("Save") }
                       }
                   )
+              }
+          }
+
+          @Composable
+          fun AdminMonitorView(logs: List<ChatItem>, modifier: Modifier = Modifier) {
+              val ctx = LocalContext.current
+              val tf = remember { SimpleDateFormat("MMM d, h:mm:ss a", Locale.getDefault()) }
+
+              if (logs.isEmpty()) {
+                  Box(modifier = modifier, contentAlignment = Alignment.Center) {
+                      Text(
+                          text = "Admin Monitor Active.\nAll messages sent between users on this LAN will appear here.",
+                          color = Color.Gray,
+                          fontSize = 14.sp
+                      )
+                  }
+              } else {
+                  LazyColumn(
+                      modifier = modifier,
+                      contentPadding = PaddingValues(14.dp),
+                      verticalArrangement = Arrangement.spacedBy(10.dp)
+                  ) {
+                      items(logs.reversed(), key = { it.id }) { item ->
+                          Surface(
+                              color = Color(0xFF1C1C1E),
+                              shape = RoundedCornerShape(14.dp),
+                              modifier = Modifier.fillMaxWidth()
+                          ) {
+                              Column(modifier = Modifier.padding(12.dp)) {
+                                  Row(
+                                      modifier = Modifier.fillMaxWidth(),
+                                      horizontalArrangement = Arrangement.SpaceBetween,
+                                      verticalAlignment = Alignment.CenterVertically
+                                  ) {
+                                      Text(
+                                          text = "${item.senderName} (@${item.senderId}) ➔ ${item.recipientLabel.ifBlank { item.convId }}",
+                                          color = Color(0xFFFF9500),
+                                          fontWeight = FontWeight.Bold,
+                                          fontSize = 12.sp
+                                      )
+                                      Text(
+                                          text = tf.format(Date(item.ts)),
+                                          color = Color.Gray,
+                                          fontSize = 10.sp
+                                      )
+                                  }
+                                  Spacer(Modifier.height(6.dp))
+                                  if (item.voiceB64.isNotBlank()) {
+                                      Row(
+                                          modifier = Modifier
+                                              .clip(RoundedCornerShape(10.dp))
+                                              .background(Color(0xFF2C2C2E))
+                                              .clickable { MediaHelper.playVoiceB64(ctx, item.voiceB64) }
+                                              .padding(horizontal = 12.dp, vertical = 8.dp),
+                                          verticalAlignment = Alignment.CenterVertically
+                                      ) {
+                                          Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color(0xFF007AFF))
+                                          Spacer(Modifier.width(6.dp))
+                                          Text("Play Voice Message (${item.voiceSec}s)", color = Color.White, fontSize = 13.sp)
+                                      }
+                                  } else {
+                                      Text(
+                                          text = item.text,
+                                          color = Color.White,
+                                          fontSize = 15.sp
+                                      )
+                                  }
+                              }
+                          }
+                      }
+                  }
               }
           }
 
@@ -1289,12 +1536,18 @@ jobs:
                   containerColor = Color.Black,
                   topBar = {
                       Row(
-                          modifier = Modifier.fillMaxWidth().background(Color(0xFF161618)).statusBarsPadding().padding(horizontal = 8.dp, vertical = 8.dp),
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .background(Color(0xFF161618))
+                              .statusBarsPadding()
+                              .padding(horizontal = 8.dp, vertical = 8.dp),
                           verticalAlignment = Alignment.CenterVertically
                       ) {
                           Row(
                               verticalAlignment = Alignment.CenterVertically,
-                              modifier = Modifier.clickable { BgramHub.activeConvId.value = null }.padding(4.dp)
+                              modifier = Modifier
+                                  .clickable { BgramHub.activeConvId.value = null }
+                                  .padding(4.dp)
                           ) {
                               Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color(0xFF007AFF))
                               Text("BGRAM", color = Color(0xFF007AFF), fontSize = 15.sp)
@@ -1304,7 +1557,9 @@ jobs:
                               Text(conv.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                               Text(
                                   text = if (conv.isGroup) "Group (${conv.membersCsv})" else "@${conv.convId}",
-                                  color = Color.Gray, fontSize = 10.sp, maxLines = 1
+                                  color = Color.Gray,
+                                  fontSize = 10.sp,
+                                  maxLines = 1
                               )
                           }
                           Spacer(Modifier.width(56.dp))
@@ -1338,9 +1593,9 @@ jobs:
                                   ) {
                                       if (m.voiceB64.isNotBlank()) {
                                           Row(
-                                              modifier = Modifier.clickable {
-                                                  MediaHelper.playVoiceB64(ctx, m.voiceB64)
-                                              }.padding(horizontal = 14.dp, vertical = 10.dp),
+                                              modifier = Modifier
+                                                  .clickable { MediaHelper.playVoiceB64(ctx, m.voiceB64) }
+                                                  .padding(horizontal = 14.dp, vertical = 10.dp),
                                               verticalAlignment = Alignment.CenterVertically,
                                               horizontalArrangement = Arrangement.spacedBy(8.dp)
                                           ) {
@@ -1369,7 +1624,12 @@ jobs:
                       }
 
                       Row(
-                          modifier = Modifier.fillMaxWidth().background(Color(0xFF161618)).navigationBarsPadding().imePadding().padding(8.dp),
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .background(Color(0xFF161618))
+                              .navigationBarsPadding()
+                              .imePadding()
+                              .padding(8.dp),
                           verticalAlignment = Alignment.CenterVertically,
                           horizontalArrangement = Arrangement.spacedBy(8.dp)
                       ) {
@@ -1379,12 +1639,15 @@ jobs:
                                       isRecording = MediaHelper.startRecording(ctx)
                                   } else {
                                       isRecording = false
-                                      MediaHelper.stopRecording()?.let { (b64, sec) ->
-                                          BgramHub.sendChat(cid, "", voiceB64 = b64, voiceSec = sec)
+                                      val clip = MediaHelper.stopRecording()
+                                      if (clip != null) {
+                                          BgramHub.sendChat(cid, "", voiceB64 = clip.b64, voiceSec = clip.sec)
                                       }
                                   }
                               },
-                              modifier = Modifier.size(36.dp).clip(CircleShape)
+                              modifier = Modifier
+                                  .size(36.dp)
+                                  .clip(CircleShape)
                                   .background(if (isRecording) Color(0xFFFF3B30) else Color(0xFF2C2C2E))
                           ) {
                               Icon(
@@ -1419,7 +1682,9 @@ jobs:
                           }
 
                           Box(
-                              modifier = Modifier.size(34.dp).clip(CircleShape)
+                              modifier = Modifier
+                                  .size(34.dp)
+                                  .clip(CircleShape)
                                   .background(if (textIn.isNotBlank()) Color(0xFF007AFF) else Color(0xFF3A3A3C))
                                   .clickable(enabled = textIn.isNotBlank()) {
                                       BgramHub.sendChat(cid, textIn.trim())
@@ -1437,7 +1702,7 @@ jobs:
 
       - name: Compile BGRAM Debug APK
         run: |
-          gradle assembleDebug --no-daemon --console=plain
+          gradle assembleDebug --no-daemon > build.log 2>&1 || (grep -E "^e: |FAILURE:|What went wrong:" -A 4 build.log && exit 1)
           cp app/build/outputs/apk/debug/app-debug.apk BGRAM-LAN.apk
 
       - name: Upload BGRAM APK Artifact
