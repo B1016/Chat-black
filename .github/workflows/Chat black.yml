@@ -89,8 +89,8 @@ jobs:
                   applicationId = "com.bgram.lan"
                   minSdk = 26
                   targetSdk = 35
-                  versionCode = 5
-                  versionName = "5.0"
+                  versionCode = 6
+                  versionName = "6.0"
               }
 
               compileOptions {
@@ -113,6 +113,7 @@ jobs:
 
               implementation("androidx.core:core-ktx:1.15.0")
               implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+              implementation("androidx.activity:activity-ktx:1.9.3")
               implementation("androidx.activity:activity-compose:1.9.3")
 
               implementation("androidx.compose.ui:ui")
@@ -184,6 +185,7 @@ jobs:
           package com.bgram.lan
 
           import android.Manifest
+          import android.app.Notification
           import android.app.NotificationChannel
           import android.app.NotificationManager
           import android.app.PendingIntent
@@ -216,23 +218,27 @@ jobs:
           import androidx.compose.foundation.lazy.rememberLazyListState
           import androidx.compose.foundation.shape.CircleShape
           import androidx.compose.foundation.shape.RoundedCornerShape
-          import androidx.compose.foundation.text.BasicTextField
           import androidx.compose.material.icons.Icons
           import androidx.compose.material.icons.automirrored.filled.ArrowBack
-          import androidx.compose.material.icons.filled.*
+          import androidx.compose.material.icons.filled.ArrowUpward
+          import androidx.compose.material.icons.filled.ContentCopy
+          import androidx.compose.material.icons.filled.Edit
+          import androidx.compose.material.icons.filled.GroupAdd
+          import androidx.compose.material.icons.filled.Groups
+          import androidx.compose.material.icons.filled.Mic
+          import androidx.compose.material.icons.filled.PlayArrow
+          import androidx.compose.material.icons.filled.Stop
           import androidx.compose.material3.*
           import androidx.compose.runtime.*
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
           import androidx.compose.ui.draw.clip
           import androidx.compose.ui.graphics.Color
-          import androidx.compose.ui.graphics.SolidColor
           import androidx.compose.ui.graphics.asImageBitmap
           import androidx.compose.ui.layout.ContentScale
           import androidx.compose.ui.platform.LocalClipboardManager
           import androidx.compose.ui.platform.LocalContext
           import androidx.compose.ui.text.AnnotatedString
-          import androidx.compose.ui.text.TextStyle
           import androidx.compose.ui.text.font.FontFamily
           import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -240,9 +246,13 @@ jobs:
           import androidx.compose.ui.unit.Dp
           import androidx.compose.ui.unit.dp
           import androidx.compose.ui.unit.sp
-          import androidx.core.app.NotificationCompat
-          import kotlinx.coroutines.*
-          import kotlinx.coroutines.flow.*
+          import kotlinx.coroutines.CoroutineScope
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.SupervisorJob
+          import kotlinx.coroutines.delay
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.isActive
+          import kotlinx.coroutines.launch
           import org.json.JSONArray
           import org.json.JSONObject
           import java.io.BufferedReader
@@ -251,9 +261,20 @@ jobs:
           import java.io.InputStreamReader
           import java.io.OutputStreamWriter
           import java.io.PrintWriter
-          import java.net.*
+          import java.net.DatagramPacket
+          import java.net.DatagramSocket
+          import java.net.Inet4Address
+          import java.net.InetAddress
+          import java.net.InetSocketAddress
+          import java.net.MulticastSocket
+          import java.net.NetworkInterface
+          import java.net.ServerSocket
+          import java.net.Socket
           import java.text.SimpleDateFormat
-          import java.util.*
+          import java.util.Collections
+          import java.util.Date
+          import java.util.Locale
+          import java.util.UUID
           import java.util.concurrent.ConcurrentHashMap
           import kotlin.random.Random
 
@@ -771,11 +792,10 @@ jobs:
                       ctx, cid.hashCode(), intent,
                       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                   )
-                  val notif = NotificationCompat.Builder(ctx, chId)
-                      .setSmallIcon(R.drawable.ic_bgram_logo)
+                  val notif = Notification.Builder(ctx, chId)
+                      .setSmallIcon(android.R.drawable.sym_action_chat)
                       .setContentTitle(senderTitle)
                       .setContentText(body)
-                      .setPriority(NotificationCompat.PRIORITY_HIGH)
                       .setAutoCancel(true)
                       .setContentIntent(pi)
                       .build()
@@ -811,8 +831,8 @@ jobs:
                   nm.createNotificationChannel(
                       NotificationChannel(chId, "BGRAM Background", NotificationManager.IMPORTANCE_LOW)
                   )
-                  val notif = NotificationCompat.Builder(this, chId)
-                      .setSmallIcon(R.drawable.ic_bgram_logo)
+                  val notif = Notification.Builder(this, chId)
+                      .setSmallIcon(android.R.drawable.sym_action_chat)
                       .setContentTitle("BGRAM Active on LAN")
                       .setContentText("Listening for messages & voice notes in background")
                       .setOngoing(true)
@@ -838,7 +858,7 @@ jobs:
                       stopRecording()
                       val f = File(ctx.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
                       outFile = f
-                      val r = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(ctx) else MediaRecorder()
+                      val r = MediaRecorder()
                       r.setAudioSource(MediaRecorder.AudioSource.MIC)
                       r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                       r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
@@ -976,7 +996,7 @@ jobs:
               isGroup: Boolean = false,
               onClick: (() -> Unit)? = null
           ) {
-              val bmp = remember(avatarB64) { MediaHelper.decodeAvatar(avatarB64) }
+              val bmp: Bitmap? = remember(avatarB64) { MediaHelper.decodeAvatar(avatarB64) }
               val baseMod = Modifier
                   .size(sizeDp)
                   .clip(CircleShape)
@@ -996,14 +1016,14 @@ jobs:
                           imageVector = Icons.Default.Groups,
                           contentDescription = null,
                           tint = Color.White,
-                          modifier = Modifier.size(sizeDp * 0.55f)
+                          modifier = Modifier.size(20.dp)
                       )
                   } else {
                       Text(
                           text = name.take(1).uppercase().ifBlank { "B" },
                           color = Color.White,
                           fontWeight = FontWeight.Bold,
-                          fontSize = (sizeDp.value * 0.42f).sp
+                          fontSize = 16.sp
                       )
                   }
               }
@@ -1143,7 +1163,7 @@ jobs:
               val allLogs by BgramHub.adminLogs.collectAsState()
               val ip by BgramHub.localIp.collectAsState()
 
-              var selectedTab by remember { mutableIntStateOf(0) }
+              var selectedTab by remember { mutableStateOf(0) }
               var showNewDirect by remember { mutableStateOf(false) }
               var showNewGroup by remember { mutableStateOf(false) }
               var showProfileModal by remember { mutableStateOf(false) }
@@ -1205,7 +1225,7 @@ jobs:
                           }
                           Spacer(Modifier.height(10.dp))
                           Text("BGRAM", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                          Text("LAN IP: $ip • ${peers.size} contact(s) online", fontSize = 11.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
+                          Text("LAN IP: $ip - ${peers.size} contact(s) online", fontSize = 11.sp, color = Color.Gray, fontFamily = FontFamily.Monospace)
 
                           if (acc.isAdmin) {
                               Spacer(Modifier.height(12.dp))
@@ -1289,7 +1309,7 @@ jobs:
                                           Text(tf.format(Date(c.updatedAt)), color = Color.Gray, fontSize = 12.sp)
                                       }
                                       Text(
-                                          text = c.snippet.ifBlank { if (c.isGroup) "Group • ${c.membersCsv}" else "@${c.convId}" },
+                                          text = c.snippet.ifBlank { if (c.isGroup) "Group: ${c.membersCsv}" else "@${c.convId}" },
                                           color = if (c.unread > 0) Color.White else Color.Gray,
                                           fontSize = 13.sp,
                                           maxLines = 1,
@@ -1475,7 +1495,7 @@ jobs:
                                       verticalAlignment = Alignment.CenterVertically
                                   ) {
                                       Text(
-                                          text = "${item.senderName} (@${item.senderId}) ➔ ${item.recipientLabel.ifBlank { item.convId }}",
+                                          text = "${item.senderName} (@${item.senderId}) -> ${item.recipientLabel.ifBlank { item.convId }}",
                                           color = Color(0xFFFF9500),
                                           fontWeight = FontWeight.Bold,
                                           fontSize = 12.sp
@@ -1600,7 +1620,7 @@ jobs:
                                               horizontalArrangement = Arrangement.spacedBy(8.dp)
                                           ) {
                                               Icon(Icons.Default.PlayArrow, contentDescription = "Play Voice", tint = Color.White)
-                                              Text("Voice Note • ${m.voiceSec}s (Tap to Play)", color = Color.White, fontSize = 14.sp)
+                                              Text("Voice Note (${m.voiceSec}s) - Tap to Play", color = Color.White, fontSize = 14.sp)
                                           }
                                       } else {
                                           Text(
@@ -1646,7 +1666,7 @@ jobs:
                                   }
                               },
                               modifier = Modifier
-                                  .size(36.dp)
+                                  .size(40.dp)
                                   .clip(CircleShape)
                                   .background(if (isRecording) Color(0xFFFF3B30) else Color(0xFF2C2C2E))
                           ) {
@@ -1658,32 +1678,24 @@ jobs:
                               )
                           }
 
-                          Surface(
-                              color = Color(0xFF2C2C2E),
-                              shape = RoundedCornerShape(20.dp),
-                              modifier = Modifier.weight(1f)
-                          ) {
-                              Box(modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
-                                  if (textIn.isEmpty()) {
-                                      Text(
-                                          text = if (isRecording) "Recording voice... Tap red stop to send" else "iMessage",
-                                          color = if (isRecording) Color(0xFFFF453A) else Color.Gray,
-                                          fontSize = 15.sp
-                                      )
-                                  }
-                                  BasicTextField(
-                                      value = textIn,
-                                      onValueChange = { textIn = it },
-                                      textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
-                                      cursorBrush = SolidColor(Color(0xFF007AFF)),
-                                      modifier = Modifier.fillMaxWidth()
+                          OutlinedTextField(
+                              value = textIn,
+                              onValueChange = { textIn = it },
+                              placeholder = {
+                                  Text(
+                                      text = if (isRecording) "Recording voice... Tap stop to send" else "iMessage",
+                                      color = if (isRecording) Color(0xFFFF453A) else Color.Gray,
+                                      fontSize = 14.sp
                                   )
-                              }
-                          }
+                              },
+                              singleLine = true,
+                              shape = RoundedCornerShape(22.dp),
+                              modifier = Modifier.weight(1f)
+                          )
 
                           Box(
                               modifier = Modifier
-                                  .size(34.dp)
+                                  .size(38.dp)
                                   .clip(CircleShape)
                                   .background(if (textIn.isNotBlank()) Color(0xFF007AFF) else Color(0xFF3A3A3C))
                                   .clickable(enabled = textIn.isNotBlank()) {
@@ -1702,7 +1714,7 @@ jobs:
 
       - name: Compile BGRAM Debug APK
         run: |
-          gradle assembleDebug --no-daemon > build.log 2>&1 || (grep -E "^e: |FAILURE:|What went wrong:" -A 4 build.log && exit 1)
+          gradle assembleDebug --no-daemon > build.log 2>&1 || (grep "^e: " build.log | head -n 20 && exit 1)
           cp app/build/outputs/apk/debug/app-debug.apk BGRAM-LAN.apk
 
       - name: Upload BGRAM APK Artifact
