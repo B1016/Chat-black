@@ -1146,7 +1146,7 @@ jobs:
               private var player: MediaPlayer? = null
 
               val playingMsgId = MutableStateFlow<String?>(null)
-              val isPlaying = MutableStateFlow(false)
+              val voicePlaying = MutableStateFlow(false)
               val progressFraction = MutableStateFlow(0f)
               val currentSec = MutableStateFlow(0)
 
@@ -1198,10 +1198,10 @@ jobs:
                           val p = player!!
                           if (p.isPlaying) {
                               p.pause()
-                              isPlaying.value = false
+                              MediaHelper.voicePlaying.value = false
                           } else {
                               p.start()
-                              isPlaying.value = true
+                              MediaHelper.voicePlaying.value = true
                               startProgressTracker(msgId)
                           }
                           return
@@ -1219,7 +1219,7 @@ jobs:
                               it.release()
                               tmp.delete()
                               if (playingMsgId.value == msgId) {
-                                  isPlaying.value = false
+                                  MediaHelper.voicePlaying.value = false
                                   progressFraction.value = 0f
                                   currentSec.value = 0
                                   playingMsgId.value = null
@@ -1228,7 +1228,7 @@ jobs:
                       }
                       player = mp
                       playingMsgId.value = msgId
-                      isPlaying.value = true
+                      MediaHelper.voicePlaying.value = true
                       progressFraction.value = 0f
                       currentSec.value = 0
                       startProgressTracker(msgId)
@@ -1251,7 +1251,7 @@ jobs:
 
               private fun startProgressTracker(msgId: String) {
                   BgramHub.scope.launch {
-                      while (isActive && playingMsgId.value == msgId && isPlaying.value) {
+                      while (isActive && playingMsgId.value == msgId && MediaHelper.voicePlaying.value) {
                           try {
                               val p = player
                               if (p != null && p.isPlaying) {
@@ -1788,7 +1788,7 @@ jobs:
               val list = allMsgs.filter { it.convId == cid }
 
               val playingMsgId by MediaHelper.playingMsgId.collectAsState()
-              val isPlayingAudio by MediaHelper.isPlaying.collectAsState()
+              val isPlayingAudio by MediaHelper.voicePlaying.collectAsState()
               val audioProgress by MediaHelper.progressFraction.collectAsState()
               val audioCurSec by MediaHelper.currentSec.collectAsState()
 
