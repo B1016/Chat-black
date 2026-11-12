@@ -1,0 +1,2905 @@
+name: Build ChatBlack APK
+
+on:
+  push:
+    branches: [ "*" ]
+  pull_request:
+    branches: [ "*" ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build ChatBlack v1.0-release by ACE
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Accept Android SDK Licenses
+        run: |
+          mkdir -p "$ANDROID_HOME/licenses"
+          printf "\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n859f317696f67ef3d7f30a50a5560e7834b43903\n" > "$ANDROID_HOME/licenses/android-sdk-license"
+          printf "\n84831b9409646a918e30573bab4c9c91346d8abd\n" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+
+      - name: Setup Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Generate ChatBlack Project
+        run: |
+          rm -rf app build settings.gradle.kts build.gradle.kts gradle.properties
+          mkdir -p app/src/main/java/com/bgram/lan
+          mkdir -p app/src/main/res/drawable-nodpi
+
+          cat << 'EOF' > settings.gradle.kts
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "ChatBlack"
+          include(":app")
+          EOF
+
+          cat << 'EOF' > gradle.properties
+          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          android.nonTransitiveRClass=true
+          EOF
+
+          cat << 'EOF' > build.gradle.kts
+          plugins {
+              id("com.android.application") version "8.7.2" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+          }
+          EOF
+
+          cat << 'EOF' > app/build.gradle.kts
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+              id("org.jetbrains.kotlin.plugin.compose")
+          }
+
+          android {
+              namespace = "com.bgram.lan"
+              compileSdk = 35
+
+              defaultConfig {
+                  applicationId = "com.bgram.lan"
+                  minSdk = 26
+                  targetSdk = 35
+                  versionCode = 11
+                  versionName = "v1.0-release"
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+
+              buildFeatures {
+                  compose = true
+              }
+          }
+
+          dependencies {
+              val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
+              implementation(composeBom)
+
+              implementation("androidx.core:core-ktx:1.15.0")
+              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+              implementation("androidx.activity:activity-ktx:1.9.3")
+              implementation("androidx.activity:activity-compose:1.9.3")
+
+              implementation("androidx.compose.animation:animation")
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.ui:ui-graphics")
+              implementation("androidx.compose.ui:ui-tooling-preview")
+              implementation("androidx.compose.material3:material3")
+              implementation("androidx.compose.material:material-icons-extended")
+
+              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+          }
+          EOF
+
+          cat << 'EOF' | base64 -d > app/src/main/res/drawable-nodpi/ic_chatblack_logo.png
+          iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAMAAABlApw1AAAA/1BMVEUJCQwQEBQTKokAAAAPIngN
+          HW8ICAsOGU4MEzIHBwoHBwoGBgkICAsICAsQERUQERUQERUQERURExMKDiUQEhQQERURIFwAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAz+qyrAAAAQHRSTlP+/v8A///O//9LrnAujnHOTrAR/zWR/wAAAAAAAAAAAAAA
+          AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAhXTetAAABKNJREFUeNrtnemWqyAQhEGRRZao
+          0Xn/R70uWUdjXMhA5VrnzJ/JVl+abtAoTdL1MnVRONc0ZVmeOtHN6l/evk3TOFcUtdlghix/alUX
+          rin3+F1CVDauqCvvALVrPmp8BNK42hdAVTQlDaKyKaq9AFURyPwN4h3DLEBo91eGjQDuRCPRyW0A
+          cDQquZUAkdmfQZgEqE80Qp3qpQCORiq3CKAqabQqq/cANY1a9TuAgkauYh4gev8jAoLm/zcBARr/
+          k3nwCFBREFUvAEoUgHIawFEYuSkAQ4FkJgBOSACnMYCjUHK/ASoKpuoXgEMDcM8AcAG4hYCABuAW
+          AgJYgp4K0QCgKKDUA0COCJA/ABBEAHIHKCikihtAiQlQXgEqCqrqAqBQAdQFwKIC2AsARwXgFwAK
+          qwGgxgWoewCHC+B6gAYXoOkBOCWg6rKYpBUBVtUCGGQA0wIoiuu/nYtJqpEBdAtgkQFsC5AjA+Qt
+          AEcG4N8AQKCVEoMNYPABFDaAIsgTcTcVE40dAY0PYLEBLD5Ajg2QfwqASinED+v1I4SUFAhACsaS
+          kRgTH6DICff9zU94f6AQ0u/ncb8A8+6vDNECiAX2ewkaI4BIVsgbgjcAyZJ1Er4A/KTuWvtdLkgS
+          jWSySSIW/yLZKBaHf5Yk0AQ7/LcEFNt/BDHY6T84gUgSaAKZeFDAakoTL5K4CRB4EMnEkwR2AFqB
+          ByBUCPwFIEwWeAxAmEIkfAIw7BEUJI29jqAQY0j4BRDoAAw8BfAB/jwJPOfwFwCIA+AA+M8Bjiq0
+          VvAA8DNxhg4gEoZchLos9nlMHOKwnmHncJcE4KclPI4hFubEEPNGwML8YjmuQ4xN/KfX9NP6R7q/
+          QCdHmS+FOsEuEk/+g/3E4SsC53A/EGAHoJ8L9vvPSED5iEBI/0TAViBfIQjtf3cIgl9yI8H9t4Uo
+          2+E/hou2sosm7GUjReifPPnLFiqW4dPqnG0TyyK55k9u+P67p8Zzwd+Dp6UIEdm/BWAYEXJZGOKx
+          f8+A64A+i1mG9iHfl6/vu3b38o0+eZJCvDLv3/3Oa6fPvaeJw5HziEJMPi80wHvCQR/8hA8DfF5f
+          AHDchnUA7AQ47qUMDXDcTxwaAP+eenSAY1+J0ADwW5Ok0Ks5/g0A0IuhboMk6LVEt0UV9FTcbRIG
+          PZOpb9goD3oiGDaLRK6iHQBwGbI9AHAZ0j2AQc7hftNg5Bwetm0GzuFh42zgHB62Lsedhy+73wOn
+          wAAAuqLObwAKdwRdW1jAjqBrExHYEXRt4wI7gq6NdADnMv7UCQhwQaefu2GBpvAdQIMG4N4RDjQA
+          dwCNGYCHpoJQhYhPtXUEOxQbN9bUgAPoubUpzIIif9UdF60CjQAMWgKMGixDLOrUXItrheZ/1GRc
+          gfkft3k3QON/EiDqapqP3U4AxDuj6XQZQGqiXBdxky4FiDIIetrpC4DoEPQrny8BWoRoBhLXr13O
+          ALSTQhQFKVdzHmcBImCYd78AoGOwgSByq967WwDQF1Zt/zQjuNVmmbOFAAOF0jbnHwXhPLdamRWm
+          1gDcQIxSWlub5y0O30PUv7x9G2u1VsqYDWb+AQgod/SxxLYJAAAAAElFTkSuQmCC
+          EOF
+
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+              <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+              <application
+                  android:allowBackup="true"
+                  android:largeHeap="true"
+                  android:hardwareAccelerated="true"
+                  android:icon="@drawable/ic_chatblack_logo"
+                  android:roundIcon="@drawable/ic_chatblack_logo"
+                  android:label="ChatBlack"
+                  android:supportsRtl="true"
+                  android:usesCleartextTraffic="true"
+                  android:theme="@android:style/Theme.Material.NoActionBar">
+
+                  <service
+                      android:name=".BgramDaemonService"
+                      android:enabled="true"
+                      android:exported="false"
+                      android:foregroundServiceType="dataSync" />
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:windowSoftInputMode="adjustResize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/bgram/lan/MainActivity.kt
+          @file:Suppress("DEPRECATION")
+          package com.bgram.lan
+
+          import android.Manifest
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.app.Service
+          import android.content.Context
+          import android.content.Intent
+          import android.content.SharedPreferences
+          import android.content.pm.ServiceInfo
+          import android.graphics.Bitmap
+          import android.graphics.BitmapFactory
+          import android.media.MediaPlayer
+          import android.media.MediaRecorder
+          import android.net.Uri
+          import android.net.wifi.WifiManager
+          import android.os.Build
+          import android.os.Bundle
+          import android.os.IBinder
+          import android.provider.Settings
+          import android.util.Base64
+          import android.util.LruCache
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.BackHandler
+          import androidx.activity.compose.rememberLauncherForActivityResult
+          import androidx.activity.compose.setContent
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.compose.animation.AnimatedVisibility
+          import androidx.compose.animation.core.animateFloatAsState
+          import androidx.compose.animation.expandVertically
+          import androidx.compose.animation.fadeIn
+          import androidx.compose.animation.fadeOut
+          import androidx.compose.animation.shrinkVertically
+          import androidx.compose.foundation.Image
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+          import androidx.compose.foundation.gestures.detectTapGestures
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.lazy.rememberLazyListState
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.automirrored.filled.ArrowBack
+          import androidx.compose.material.icons.filled.Add
+          import androidx.compose.material.icons.filled.ArrowUpward
+          import androidx.compose.material.icons.filled.Close
+          import androidx.compose.material.icons.filled.ContentCopy
+          import androidx.compose.material.icons.filled.Delete
+          import androidx.compose.material.icons.filled.Edit
+          import androidx.compose.material.icons.filled.GroupAdd
+          import androidx.compose.material.icons.filled.Groups
+          import androidx.compose.material.icons.filled.Image
+          import androidx.compose.material.icons.filled.Mic
+          import androidx.compose.material.icons.filled.Pause
+          import androidx.compose.material.icons.filled.PlayArrow
+          import androidx.compose.material.icons.filled.Share
+          import androidx.compose.material.icons.filled.Stop
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.draw.rotate
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.asImageBitmap
+          import androidx.compose.ui.input.pointer.pointerInput
+          import androidx.compose.ui.layout.ContentScale
+          import androidx.compose.ui.platform.LocalClipboardManager
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.text.AnnotatedString
+          import androidx.compose.ui.text.font.FontFamily
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.Dp
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import androidx.compose.ui.window.Dialog
+          import androidx.compose.ui.window.DialogProperties
+          import kotlinx.coroutines.CoroutineScope
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.SupervisorJob
+          import kotlinx.coroutines.delay
+          import kotlinx.coroutines.flow.MutableStateFlow
+          import kotlinx.coroutines.isActive
+          import kotlinx.coroutines.launch
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import java.io.BufferedOutputStream
+          import java.io.BufferedReader
+          import java.io.ByteArrayOutputStream
+          import java.io.File
+          import java.io.FileInputStream
+          import java.io.InputStreamReader
+          import java.io.OutputStreamWriter
+          import java.io.PrintWriter
+          import java.net.DatagramPacket
+          import java.net.DatagramSocket
+          import java.net.Inet4Address
+          import java.net.InetAddress
+          import java.net.InetSocketAddress
+          import java.net.MulticastSocket
+          import java.net.NetworkInterface
+          import java.net.ServerSocket
+          import java.net.Socket
+          import java.text.SimpleDateFormat
+          import java.util.Collections
+          import java.util.Date
+          import java.util.Locale
+          import java.util.UUID
+          import java.util.concurrent.ConcurrentHashMap
+          import kotlin.random.Random
+
+          // ============================================================================
+          // 1. DATA MODELS (ChatBlack v1.0-release by ACE - Low-End Optimized)
+          // ============================================================================
+
+          const val APP_VERSION_LABEL = "v1.0-release by ACE"
+
+          data class UserAccount(
+              val uid: String,
+              val displayName: String,
+              val avatarB64: String = "",
+              val loggedIn: Boolean = false
+          )
+
+          data class PeerNode(
+              val uid: String,
+              val name: String,
+              val ip: String,
+              val avatarB64: String = "",
+              val seenAt: Long = System.currentTimeMillis()
+          )
+
+          data class ChatItem(
+              val id: String = UUID.randomUUID().toString(),
+              val convId: String,
+              val senderId: String,
+              val senderName: String,
+              val text: String,
+              val imageB64: String = "",
+              val voiceB64: String = "",
+              val voiceSec: Int = 0,
+              val waveformCsv: String = "",
+              val replyToId: String = "",
+              val replyToSender: String = "",
+              val replyToText: String = "",
+              val reactionsCsv: String = "",
+              val ts: Long = System.currentTimeMillis(),
+              val mine: Boolean,
+              val ack: Boolean = false,
+              val readByPeer: Boolean = false
+          )
+
+          data class ConversationMeta(
+              val convId: String,
+              val title: String,
+              val isGroup: Boolean = false,
+              val membersCsv: String = "",
+              val peerIp: String = "",
+              val avatarB64: String = "",
+              val snippet: String = "",
+              val updatedAt: Long = System.currentTimeMillis(),
+              val unread: Int = 0
+          )
+
+          class VoiceClip(val b64: String, val sec: Int, val waveformCsv: String)
+
+          // ============================================================================
+          // 2. CORE LAN HUB, HOTSPOT DISCOVERY & OPT-IN APK HTTP SERVER
+          // ============================================================================
+
+          object BgramHub {
+              private const val UDP_PORT = 45454
+              private const val TCP_PORT = 45455
+              const val HTTP_PORT = 8080
+              private const val MCAST = "239.255.45.45"
+
+              lateinit var prefs: SharedPreferences
+              val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+              val account = MutableStateFlow(UserAccount("", ""))
+              val peers = MutableStateFlow<List<PeerNode>>(emptyList())
+              val conversations = MutableStateFlow<List<ConversationMeta>>(emptyList())
+              val messages = MutableStateFlow<List<ChatItem>>(emptyList())
+              val activeConvId = MutableStateFlow<String?>(null)
+              val localIp = MutableStateFlow("0.0.0.0")
+              // Disabled by default; user can enable it in the Share APK dialog
+              val apkServerEnabled = MutableStateFlow(false)
+
+              private val peerCache = ConcurrentHashMap<String, PeerNode>()
+              private var initialized = false
+
+              fun init(ctx: Context) {
+                  if (initialized) return
+                  initialized = true
+                  prefs = ctx.applicationContext.getSharedPreferences("bgram_store", Context.MODE_PRIVATE)
+                  loadState(ctx.applicationContext)
+                  startNetworking(ctx.applicationContext)
+              }
+
+              private fun resolveDeviceBoundId(ctx: Context): String {
+                  val saved = prefs.getString("device_uid", null)
+                  if (!saved.isNullOrBlank()) return saved
+                  val androidId = try {
+                      Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ANDROID_ID) ?: ""
+                  } catch (e: Throwable) {
+                      ""
+                  }
+                  val clean = androidId.filter { it.isLetterOrDigit() }.lowercase()
+                  val bound = if (clean.length >= 6) {
+                      "bg_" + clean.takeLast(6)
+                  } else {
+                      "bg_" + Random.nextInt(100000, 999999)
+                  }
+                  prefs.edit().putString("device_uid", bound).apply()
+                  return bound
+              }
+
+              private fun loadState(ctx: Context) {
+                  try {
+                      val uid = resolveDeviceBoundId(ctx)
+                      account.value = UserAccount(
+                          uid = uid,
+                          displayName = prefs.getString("name", "") ?: "",
+                          avatarB64 = prefs.getString("avatar", "") ?: "",
+                          loggedIn = prefs.getBoolean("logged_in", false)
+                      )
+                      apkServerEnabled.value = prefs.getBoolean("apk_server_enabled", false)
+                      val convArr = JSONArray(prefs.getString("convs", "[]") ?: "[]")
+                      val convList = mutableListOf<ConversationMeta>()
+                      val msgList = mutableListOf<ChatItem>()
+                      for (i in 0 until convArr.length()) {
+                          val o = convArr.getJSONObject(i)
+                          val cid = o.getString("convId")
+                          convList.add(
+                              ConversationMeta(
+                                  convId = cid,
+                                  title = o.optString("title", cid),
+                                  isGroup = o.optBoolean("isGroup", false),
+                                  membersCsv = o.optString("membersCsv", ""),
+                                  peerIp = o.optString("peerIp", ""),
+                                  avatarB64 = o.optString("avatarB64", ""),
+                                  snippet = o.optString("snippet", ""),
+                                  updatedAt = o.optLong("updatedAt", 0L),
+                                  unread = o.optInt("unread", 0)
+                              )
+                          )
+                          msgList.addAll(loadConvMessages("msg_$cid").map { it.copy(convId = cid) })
+                      }
+                      conversations.value = convList.sortedByDescending { it.updatedAt }
+                      messages.value = msgList
+                  } catch (e: Throwable) {}
+              }
+
+              fun setApkServerEnabled(enabled: Boolean) {
+                  apkServerEnabled.value = enabled
+                  prefs.edit().putBoolean("apk_server_enabled", enabled).apply()
+              }
+
+              private fun loadConvMessages(storageKey: String): List<ChatItem> {
+                  return try {
+                      val arr = JSONArray(prefs.getString(storageKey, "[]") ?: "[]")
+                      val list = mutableListOf<ChatItem>()
+                      for (i in 0 until arr.length()) {
+                          val o = arr.getJSONObject(i)
+                          list.add(
+                              ChatItem(
+                                  id = o.getString("id"),
+                                  convId = o.optString("convId", ""),
+                                  senderId = o.getString("senderId"),
+                                  senderName = o.optString("senderName", ""),
+                                  text = o.optString("text", ""),
+                                  imageB64 = o.optString("imageB64", ""),
+                                  voiceB64 = o.optString("voiceB64", ""),
+                                  voiceSec = o.optInt("voiceSec", 0),
+                                  waveformCsv = o.optString("waveformCsv", ""),
+                                  replyToId = o.optString("replyToId", ""),
+                                  replyToSender = o.optString("replyToSender", ""),
+                                  replyToText = o.optString("replyToText", ""),
+                                  reactionsCsv = o.optString("reactionsCsv", ""),
+                                  ts = o.getLong("ts"),
+                                  mine = o.getBoolean("mine"),
+                                  ack = o.optBoolean("ack", true),
+                                  readByPeer = o.optBoolean("readByPeer", false)
+                              )
+                          )
+                      }
+                      list.takeLast(50)
+                  } catch (e: Throwable) {
+                      emptyList()
+                  }
+              }
+
+              private fun persistConvs() {
+                  try {
+                      val arr = JSONArray()
+                      conversations.value.forEach { c ->
+                          arr.put(JSONObject().apply {
+                              put("convId", c.convId)
+                              put("title", c.title)
+                              put("isGroup", c.isGroup)
+                              put("membersCsv", c.membersCsv)
+                              put("peerIp", c.peerIp)
+                              put("avatarB64", c.avatarB64)
+                              put("snippet", c.snippet)
+                              put("updatedAt", c.updatedAt)
+                              put("unread", c.unread)
+                          })
+                      }
+                      prefs.edit().putString("convs", arr.toString()).apply()
+                  } catch (e: Throwable) {}
+              }
+
+              private fun persistMessages(storageKey: String, list: List<ChatItem>) {
+                  try {
+                      val arr = JSONArray()
+                      list.takeLast(50).forEach { m ->
+                          arr.put(JSONObject().apply {
+                              put("id", m.id)
+                              put("convId", m.convId)
+                              put("senderId", m.senderId)
+                              put("senderName", m.senderName)
+                              put("text", m.text)
+                              put("imageB64", m.imageB64)
+                              put("voiceB64", m.voiceB64)
+                              put("voiceSec", m.voiceSec)
+                              put("waveformCsv", m.waveformCsv)
+                              put("replyToId", m.replyToId)
+                              put("replyToSender", m.replyToSender)
+                              put("replyToText", m.replyToText)
+                              put("reactionsCsv", m.reactionsCsv)
+                              put("ts", m.ts)
+                              put("mine", m.mine)
+                              put("ack", m.ack)
+                              put("readByPeer", m.readByPeer)
+                          })
+                      }
+                      prefs.edit().putString(storageKey, arr.toString()).apply()
+                  } catch (e: Throwable) {}
+              }
+
+              fun login(name: String, avatarB64: String) {
+                  val updated = account.value.copy(
+                      displayName = name.trim(),
+                      avatarB64 = avatarB64,
+                      loggedIn = true
+                  )
+                  account.value = updated
+                  prefs.edit()
+                      .putString("name", updated.displayName)
+                      .putString("avatar", updated.avatarB64)
+                      .putBoolean("logged_in", true)
+                      .apply()
+              }
+
+              fun logout() {
+                  activeConvId.value = null
+                  val updated = account.value.copy(loggedIn = false)
+                  account.value = updated
+                  prefs.edit().putBoolean("logged_in", false).apply()
+              }
+
+              fun openOrCreateDirect(peerUid: String, nameHint: String?, ipHint: String?) {
+                  val id = peerUid.trim().removePrefix("@").lowercase()
+                  val known = peerCache[id]
+                  val cur = conversations.value.toMutableList()
+                  val idx = cur.indexOfFirst { it.convId == id }
+                  if (idx == -1) {
+                      cur.add(0, ConversationMeta(
+                          convId = id,
+                          title = nameHint ?: known?.name ?: id,
+                          isGroup = false,
+                          membersCsv = id,
+                          peerIp = ipHint ?: known?.ip ?: "",
+                          avatarB64 = known?.avatarB64 ?: ""
+                      ))
+                  } else {
+                      cur[idx] = cur[idx].copy(unread = 0)
+                  }
+                  conversations.value = cur
+                  persistConvs()
+                  activeConvId.value = id
+                  markConversationReadAndNotify(id)
+              }
+
+              fun createGroup(title: String, memberIds: List<String>) {
+                  val cleanMembers = (memberIds.map { it.trim().removePrefix("@").lowercase() } + account.value.uid.lowercase())
+                      .filter { it.isNotBlank() }.distinct()
+                  val gid = "grp_" + Random.nextInt(10000, 99999)
+                  val meta = ConversationMeta(
+                      convId = gid,
+                      title = title.trim().ifBlank { "Group Chat" },
+                      isGroup = true,
+                      membersCsv = cleanMembers.joinToString(",")
+                  )
+                  conversations.value = listOf(meta) + conversations.value
+                  persistConvs()
+                  activeConvId.value = gid
+              }
+
+              private fun resolveConversationTargetIps(conv: ConversationMeta): List<String> {
+                  val meUid = account.value.uid.lowercase()
+                  return if (conv.isGroup) {
+                      conv.membersCsv.split(",").map { it.trim().lowercase() }
+                          .filter { it != meUid }
+                          .mapNotNull { peerCache[it]?.ip }
+                          .distinct()
+                  } else {
+                      listOfNotNull(peerCache[conv.convId.lowercase()]?.ip ?: conv.peerIp.takeIf { it.isNotBlank() }).distinct()
+                  }
+              }
+
+              fun sendChat(
+                  cid: String,
+                  text: String,
+                  imageB64: String = "",
+                  voiceB64: String = "",
+                  voiceSec: Int = 0,
+                  waveformCsv: String = "",
+                  replyTo: ChatItem? = null
+              ) {
+                  val conv = conversations.value.firstOrNull { it.convId == cid } ?: return
+                  val me = account.value
+                  val rPreview = when {
+                      replyTo == null -> ""
+                      replyTo.voiceB64.isNotBlank() -> "Voice Note (${replyTo.voiceSec}s)"
+                      replyTo.imageB64.isNotBlank() -> "Photo"
+                      else -> replyTo.text.take(60)
+                  }
+                  val msg = ChatItem(
+                      convId = cid,
+                      senderId = me.uid,
+                      senderName = me.displayName,
+                      text = text,
+                      imageB64 = imageB64,
+                      voiceB64 = voiceB64,
+                      voiceSec = voiceSec,
+                      waveformCsv = waveformCsv,
+                      replyToId = replyTo?.id ?: "",
+                      replyToSender = replyTo?.senderName ?: "",
+                      replyToText = rPreview,
+                      mine = true,
+                      ack = false,
+                      readByPeer = false
+                  )
+                  appendMessage(cid, msg, isIncoming = false)
+
+                  scope.launch {
+                      val targets = resolveConversationTargetIps(conv)
+                      var anyAck = false
+                      targets.forEach { ip ->
+                          val ok = transmitChatPacket(ip, conv, msg)
+                          if (ok) anyAck = true
+                      }
+                      if (anyAck) markAck(cid, msg.id)
+                  }
+              }
+
+              fun sendReaction(cid: String, targetMsgId: String, emoji: String) {
+                  val conv = conversations.value.firstOrNull { it.convId == cid } ?: return
+                  val me = account.value
+                  applyReactionLocal(cid, targetMsgId, me.displayName.ifBlank { me.uid }, emoji)
+
+                  scope.launch {
+                      val pkt = JSONObject().apply {
+                          put("pktType", "REACTION")
+                          put("convId", if (conv.isGroup) conv.convId else me.uid.lowercase())
+                          put("isGroup", conv.isGroup)
+                          put("senderId", me.uid)
+                          put("senderName", me.displayName)
+                          put("targetMsgId", targetMsgId)
+                          put("emoji", emoji)
+                      }
+                      resolveConversationTargetIps(conv).forEach { ip ->
+                          transmitRawJson(ip, pkt)
+                      }
+                  }
+              }
+
+              fun markConversationReadAndNotify(cid: String) {
+                  val conv = conversations.value.firstOrNull { it.convId == cid } ?: return
+                  val updatedConvs = conversations.value.map {
+                      if (it.convId == cid && it.unread > 0) it.copy(unread = 0) else it
+                  }
+                  if (updatedConvs != conversations.value) {
+                      conversations.value = updatedConvs
+                      persistConvs()
+                  }
+                  val me = account.value
+                  scope.launch {
+                      val pkt = JSONObject().apply {
+                          put("pktType", "READ")
+                          put("convId", if (conv.isGroup) conv.convId else me.uid.lowercase())
+                          put("isGroup", conv.isGroup)
+                          put("senderId", me.uid)
+                      }
+                      resolveConversationTargetIps(conv).forEach { ip ->
+                          transmitRawJson(ip, pkt)
+                      }
+                  }
+              }
+
+              private fun applyReactionLocal(cid: String, targetMsgId: String, actor: String, emoji: String) {
+                  val entry = "$emoji $actor"
+                  val nextAll = messages.value.map { m ->
+                      if (m.convId == cid && m.id == targetMsgId) {
+                          val existing = m.reactionsCsv.split("|").filter { it.isNotBlank() }.toMutableList()
+                          if (existing.contains(entry)) {
+                              existing.remove(entry)
+                          } else {
+                              existing.add(entry)
+                          }
+                          m.copy(reactionsCsv = existing.joinToString("|"))
+                      } else m
+                  }
+                  messages.value = nextAll
+                  persistMessages("msg_$cid", nextAll.filter { it.convId == cid })
+              }
+
+              private fun markPeerReadLocal(cid: String) {
+                  val nextAll = messages.value.map { m ->
+                      if (m.convId == cid && m.mine && !m.readByPeer) {
+                          m.copy(ack = true, readByPeer = true)
+                      } else m
+                  }
+                  messages.value = nextAll
+                  persistMessages("msg_$cid", nextAll.filter { it.convId == cid })
+              }
+
+              private fun appendMessage(cid: String, item: ChatItem, isIncoming: Boolean) {
+                  val curAll = messages.value
+                  if (curAll.any { it.convId == cid && it.id == item.id }) return
+                  val nextAll = curAll + item.copy(convId = cid)
+                  messages.value = nextAll
+                  persistMessages("msg_$cid", nextAll.filter { it.convId == cid })
+
+                  val preview = when {
+                      item.voiceB64.isNotBlank() -> "Voice message (${item.voiceSec}s)"
+                      item.imageB64.isNotBlank() -> if (item.text.isNotBlank()) "Photo: ${item.text}" else "Sent a photo"
+                      else -> item.text
+                  }
+                  val isOpen = activeConvId.value == cid
+                  val updatedConvs = conversations.value.map { c ->
+                      if (c.convId == cid) {
+                          c.copy(
+                              snippet = preview,
+                              updatedAt = item.ts,
+                              unread = if (isIncoming && !isOpen) c.unread + 1 else 0
+                          )
+                      } else c
+                  }.sortedByDescending { it.updatedAt }
+                  conversations.value = updatedConvs
+                  persistConvs()
+              }
+
+              private fun markAck(cid: String, msgId: String) {
+                  val nextAll = messages.value.map {
+                      if (it.convId == cid && it.id == msgId) it.copy(ack = true) else it
+                  }
+                  messages.value = nextAll
+                  persistMessages("msg_$cid", nextAll.filter { it.convId == cid })
+              }
+
+              private fun transmitChatPacket(ip: String, conv: ConversationMeta, item: ChatItem): Boolean {
+                  val pkt = JSONObject().apply {
+                      put("pktType", "CHAT")
+                      put("id", item.id)
+                      put("convId", if (conv.isGroup) conv.convId else account.value.uid.lowercase())
+                      put("convTitle", if (conv.isGroup) conv.title else account.value.displayName)
+                      put("isGroup", conv.isGroup)
+                      put("membersCsv", conv.membersCsv)
+                      put("senderId", account.value.uid)
+                      put("senderName", account.value.displayName)
+                      put("senderAvatar", account.value.avatarB64)
+                      put("text", item.text)
+                      put("imageB64", item.imageB64)
+                      put("voiceB64", item.voiceB64)
+                      put("voiceSec", item.voiceSec)
+                      put("waveformCsv", item.waveformCsv)
+                      put("replyToId", item.replyToId)
+                      put("replyToSender", item.replyToSender)
+                      put("replyToText", item.replyToText)
+                      put("reactionsCsv", item.reactionsCsv)
+                      put("ts", item.ts)
+                  }
+                  return transmitRawJson(ip, pkt)
+              }
+
+              private fun transmitRawJson(ip: String, pkt: JSONObject): Boolean {
+                  return try {
+                      Socket().use { s ->
+                          s.connect(InetSocketAddress(ip, TCP_PORT), 4000)
+                          s.soTimeout = 5000
+                          val out = PrintWriter(OutputStreamWriter(s.getOutputStream(), Charsets.UTF_8), true)
+                          val inp = BufferedReader(InputStreamReader(s.getInputStream(), Charsets.UTF_8))
+                          out.println(pkt.toString())
+                          inp.readLine() == "ACK"
+                      }
+                  } catch (e: Throwable) {
+                      false
+                  }
+              }
+
+              private fun sendDiscoveryBeacon(targetAddr: InetAddress, myIp: String) {
+                  try {
+                      val data = JSONObject().apply {
+                          put("uid", account.value.uid.lowercase())
+                          put("name", account.value.displayName)
+                          put("ip", myIp)
+                          put("avatar", account.value.avatarB64)
+                      }.toString().toByteArray(Charsets.UTF_8)
+                      DatagramSocket().use { ds ->
+                          ds.broadcast = true
+                          ds.send(DatagramPacket(data, data.size, targetAddr, UDP_PORT))
+                      }
+                  } catch (e: Throwable) {}
+              }
+
+              private fun startNetworking(ctx: Context) {
+                  try {
+                      val wm = ctx.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                      wm?.createMulticastLock("bgram_lock")?.apply {
+                          setReferenceCounted(true)
+                          acquire()
+                      }
+                  } catch (e: Throwable) {}
+
+                  scope.launch {
+                      while (isActive) {
+                          val ip = resolveLanIp()
+                          localIp.value = ip
+                          if (ip != "0.0.0.0" && account.value.loggedIn) {
+                              val targets = resolveDiscoveryTargets(ip)
+                              targets.forEach { addr ->
+                                  sendDiscoveryBeacon(addr, ip)
+                              }
+                          }
+                          delay(3500)
+                      }
+                  }
+
+                  scope.launch {
+                      try {
+                          val ms = MulticastSocket(UDP_PORT).apply {
+                              reuseAddress = true
+                              broadcast = true
+                              try {
+                                  joinGroup(InetAddress.getByName(MCAST))
+                              } catch (e: Throwable) {}
+                          }
+                          val buf = ByteArray(32768)
+                          while (isActive) {
+                              val dp = DatagramPacket(buf, buf.size)
+                              ms.receive(dp)
+                              val j = JSONObject(String(dp.data, 0, dp.length, Charsets.UTF_8))
+                              val uid = j.optString("uid", "").lowercase()
+                              val remoteIp = dp.address.hostAddress ?: j.optString("ip", "")
+                              if (uid.isNotBlank() && uid != account.value.uid.lowercase() && remoteIp.isNotBlank()) {
+                                  val isNewPeer = !peerCache.containsKey(uid)
+                                  val node = PeerNode(
+                                      uid = uid,
+                                      name = j.optString("name", uid),
+                                      ip = remoteIp,
+                                      avatarB64 = j.optString("avatar", "")
+                                  )
+                                  peerCache[uid] = node
+                                  peers.value = peerCache.values.sortedBy { it.name.lowercase() }
+                                  syncPeerMetadata(node)
+
+                                  if (isNewPeer && account.value.loggedIn) {
+                                      val myIp = localIp.value
+                                      if (myIp != "0.0.0.0") {
+                                          launch {
+                                              try {
+                                                  sendDiscoveryBeacon(InetAddress.getByName(remoteIp), myIp)
+                                              } catch (e: Throwable) {}
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      } catch (e: Throwable) {}
+                  }
+
+                  scope.launch {
+                      try {
+                          val ss = ServerSocket().apply {
+                              reuseAddress = true
+                              bind(InetSocketAddress(TCP_PORT))
+                          }
+                          while (isActive) {
+                              val client = ss.accept()
+                              launch { handleClient(ctx, client) }
+                          }
+                      } catch (e: Throwable) {}
+                  }
+
+                  scope.launch {
+                      try {
+                          val httpServer = ServerSocket().apply {
+                              reuseAddress = true
+                              bind(InetSocketAddress(HTTP_PORT))
+                          }
+                          while (isActive) {
+                              val client = httpServer.accept()
+                              if (!apkServerEnabled.value) {
+                                  try { client.close() } catch (e: Throwable) {}
+                              } else {
+                                  launch { handleHttpClient(ctx, client) }
+                              }
+                          }
+                      } catch (e: Throwable) {}
+                  }
+              }
+
+              private fun handleHttpClient(ctx: Context, client: Socket) {
+                  try {
+                      client.use { sock ->
+                          if (!apkServerEnabled.value) return
+                          sock.soTimeout = 10000
+                          val reader = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.UTF_8))
+                          val reqLine = reader.readLine() ?: return
+                          while (true) {
+                              val hdr = reader.readLine()
+                              if (hdr.isNullOrEmpty()) break
+                          }
+                          val out = BufferedOutputStream(sock.getOutputStream())
+                          val apkFile = File(ctx.applicationInfo.sourceDir)
+
+                          if ((reqLine.startsWith("GET /chatblack.apk") || reqLine.startsWith("GET /bgram.apk")) && apkFile.exists()) {
+                              val headers = "HTTP/1.1 200 OK\r\n" +
+                                  "Content-Type: application/vnd.android.package-archive\r\n" +
+                                  "Content-Disposition: attachment; filename=\"ChatBlack-v1.0-release.apk\"\r\n" +
+                                  "Content-Length: ${apkFile.length()}\r\n" +
+                                  "Connection: close\r\n\r\n"
+                              out.write(headers.toByteArray(Charsets.UTF_8))
+                              FileInputStream(apkFile).use { fis ->
+                                  val buf = ByteArray(8192)
+                                  while (true) {
+                                      val read = fis.read(buf)
+                                      if (read <= 0) break
+                                      out.write(buf, 0, read)
+                                  }
+                              }
+                              out.flush()
+                          } else {
+                              val ip = localIp.value
+                              val sizeMb = String.format(Locale.US, "%.1f MB", apkFile.length() / (1024.0 * 1024.0))
+                              val html = "\u003c!DOCTYPE html\u003e\u003chtml\u003e\u003chead\u003e" +
+                                  "\u003cmeta charset='utf-8'\u003e\u003cmeta name='viewport' content='width=device-width,initial-scale=1'\u003e" +
+                                  "\u003ctitle\u003eChatBlack APK Download\u003c/title\u003e\u003c/head\u003e" +
+                                  "\u003cbody style='background:#000;color:#fff;font-family:sans-serif;text-align:center;padding:40px 20px;'\u003e" +
+                                  "\u003cdiv style='max-width:380px;margin:0 auto;background:#1C1C1E;padding:28px;border-radius:22px;'\u003e" +
+                                  "\u003cdiv style='width:76px;height:76px;background:#090A0D;border:2px solid #222;border-radius:20px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:32px;color:#0B289E;font-weight:bold;'\u003e\u25CF\u003c/div\u003e" +
+                                  "\u003ch2 style='margin:0 0 4px;'\u003eChatBlack\u003c/h2\u003e" +
+                                  "\u003cp style='color:#007AFF;font-size:12px;margin:0 0 12px;font-weight:bold;'\u003ev1.0-release by ACE\u003c/p\u003e" +
+                                  "\u003cp style='color:#999;font-size:14px;margin:0 0 24px;'\u003eHosted by ${account.value.displayName.ifBlank { account.value.uid }} ($ip)\u003cbr\u003eSize: $sizeMb\u003c/p\u003e" +
+                                  "\u003ca href='/chatblack.apk' style='display:block;background:#007AFF;color:#fff;text-decoration:none;padding:15px;border-radius:14px;font-weight:bold;font-size:16px;'\u003eDownload ChatBlack.apk\u003c/a\u003e" +
+                                  "\u003c/div\u003e\u003c/body\u003e\u003c/html\u003e"
+                              val bodyBytes = html.toByteArray(Charsets.UTF_8)
+                              val headers = "HTTP/1.1 200 OK\r\n" +
+                                  "Content-Type: text/html; charset=utf-8\r\n" +
+                                  "Content-Length: ${bodyBytes.size}\r\n" +
+                                  "Connection: close\r\n\r\n"
+                              out.write(headers.toByteArray(Charsets.UTF_8))
+                              out.write(bodyBytes)
+                              out.flush()
+                          }
+                      }
+                  } catch (e: Throwable) {}
+              }
+
+              private fun syncPeerMetadata(node: PeerNode) {
+                  val updated = conversations.value.map { c ->
+                      if (!c.isGroup && c.convId == node.uid) {
+                          c.copy(
+                              title = node.name.ifBlank { c.title },
+                              peerIp = node.ip,
+                              avatarB64 = node.avatarB64.ifBlank { c.avatarB64 }
+                          )
+                      } else c
+                  }
+                  if (updated != conversations.value) {
+                      conversations.value = updated
+                      persistConvs()
+                  }
+              }
+
+              private fun handleClient(ctx: Context, s: Socket) {
+                  try {
+                      s.use { sock ->
+                          val remoteIp = sock.inetAddress.hostAddress ?: ""
+                          val reader = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.UTF_8))
+                          val line = reader.readLine()
+                          if (line != null) {
+                              val out = PrintWriter(OutputStreamWriter(sock.getOutputStream(), Charsets.UTF_8), true)
+                              val j = JSONObject(line)
+                              val pktType = j.optString("pktType", "CHAT")
+                              val isGroup = j.optBoolean("isGroup", false)
+                              val senderId = j.optString("senderId", "").lowercase()
+                              val senderName = j.optString("senderName", senderId)
+                              val cid = if (isGroup) j.optString("convId", senderId) else senderId
+
+                              if (pktType == "REACTION") {
+                                  val targetMsgId = j.optString("targetMsgId", "")
+                                  val emoji = j.optString("emoji", "")
+                                  if (targetMsgId.isNotBlank() && emoji.isNotBlank()) {
+                                      applyReactionLocal(cid, targetMsgId, senderName.ifBlank { senderId }, emoji)
+                                  }
+                                  out.println("ACK")
+                                  return
+                              }
+
+                              if (pktType == "READ") {
+                                  markPeerReadLocal(cid)
+                                  out.println("ACK")
+                                  return
+                              }
+
+                              val senderAvatar = j.optString("senderAvatar", "")
+                              val title = if (isGroup) j.optString("convTitle", "Group") else senderName
+                              val members = j.optString("membersCsv", senderId)
+
+                              peerCache[senderId] = PeerNode(senderId, senderName, remoteIp, senderAvatar)
+                              peers.value = peerCache.values.sortedBy { it.name.lowercase() }
+
+                              val msg = ChatItem(
+                                  id = j.getString("id"),
+                                  convId = cid,
+                                  senderId = senderId,
+                                  senderName = senderName,
+                                  text = j.optString("text", ""),
+                                  imageB64 = j.optString("imageB64", ""),
+                                  voiceB64 = j.optString("voiceB64", ""),
+                                  voiceSec = j.optInt("voiceSec", 0),
+                                  waveformCsv = j.optString("waveformCsv", ""),
+                                  replyToId = j.optString("replyToId", ""),
+                                  replyToSender = j.optString("replyToSender", ""),
+                                  replyToText = j.optString("replyToText", ""),
+                                  reactionsCsv = j.optString("reactionsCsv", ""),
+                                  ts = j.optLong("ts", System.currentTimeMillis()),
+                                  mine = false,
+                                  ack = true,
+                                  readByPeer = true
+                              )
+
+                              if (conversations.value.none { it.convId == cid }) {
+                                  conversations.value = listOf(
+                                      ConversationMeta(
+                                          convId = cid,
+                                          title = title,
+                                          isGroup = isGroup,
+                                          membersCsv = members,
+                                          peerIp = remoteIp,
+                                          avatarB64 = if (isGroup) "" else senderAvatar
+                                      )
+                                  ) + conversations.value
+                              }
+                              appendMessage(cid, msg, isIncoming = true)
+
+                              if (activeConvId.value == cid) {
+                                  markConversationReadAndNotify(cid)
+                              } else {
+                                  val bodyText = when {
+                                      msg.voiceB64.isNotBlank() -> "Sent a voice message (${msg.voiceSec}s)"
+                                      msg.imageB64.isNotBlank() -> "Sent a photo"
+                                      else -> msg.text
+                                  }
+                                  postMsgNotification(ctx, cid, if (isGroup) "$title ($senderName)" else senderName, bodyText)
+                              }
+                              out.println("ACK")
+                          }
+                      }
+                  } catch (e: Throwable) {}
+              }
+
+              private fun postMsgNotification(ctx: Context, cid: String, senderTitle: String, body: String) {
+                  try {
+                      val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                      val chId = "chatblack_alerts"
+                      nm.createNotificationChannel(
+                          NotificationChannel(chId, "ChatBlack Messages", NotificationManager.IMPORTANCE_HIGH)
+                      )
+                      val intent = Intent(ctx, MainActivity::class.java).apply {
+                          flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                          putExtra("open_conv_id", cid)
+                      }
+                      val pi = PendingIntent.getActivity(
+                          ctx, cid.hashCode(), intent,
+                          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                      )
+                      val notif = Notification.Builder(ctx, chId)
+                          .setSmallIcon(android.R.drawable.sym_action_chat)
+                          .setContentTitle(senderTitle)
+                          .setContentText(body)
+                          .setAutoCancel(true)
+                          .setContentIntent(pi)
+                          .build()
+                      nm.notify(cid.hashCode(), notif)
+                  } catch (e: Throwable) {}
+              }
+
+              fun resolveLanIp(): String {
+                  var fallbackIp = "0.0.0.0"
+                  try {
+                      for (nif in Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                          if (!nif.isUp || nif.isLoopback) continue
+                          val nName = nif.name.lowercase()
+                          for (ia in nif.interfaceAddresses) {
+                              val a = ia.address
+                              if (a is Inet4Address && !a.isLoopbackAddress && a.isSiteLocalAddress) {
+                                  val host = a.hostAddress ?: continue
+                                  if (nName.startsWith("wlan") || nName.startsWith("ap") || nName.startsWith("swlan") || nName.startsWith("rndis")) {
+                                      return host
+                                  }
+                                  if (fallbackIp == "0.0.0.0") fallbackIp = host
+                              }
+                          }
+                      }
+                  } catch (e: Throwable) {}
+                  return fallbackIp
+              }
+
+              private fun resolveDiscoveryTargets(myIp: String): List<InetAddress> {
+                  val list = mutableListOf<InetAddress>()
+                  try {
+                      list.add(InetAddress.getByName("255.255.255.255"))
+                      list.add(InetAddress.getByName(MCAST))
+                      for (nif in Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                          if (!nif.isUp || nif.isLoopback) continue
+                          for (ia in nif.interfaceAddresses) {
+                              val a = ia.address
+                              if (a is Inet4Address && !a.isLoopbackAddress) {
+                                  ia.broadcast?.let { list.add(it) }
+                                  val host = a.hostAddress ?: ""
+                                  val parts = host.split(".")
+                                  if (parts.size == 4) {
+                                      val prefix = "${parts[0]}.${parts[1]}.${parts[2]}"
+                                      list.add(InetAddress.getByName("$prefix.1"))
+                                      list.add(InetAddress.getByName("$prefix.255"))
+                                  }
+                              }
+                          }
+                      }
+                      val arp = File("/proc/net/arp")
+                      if (arp.exists() && arp.canRead()) {
+                          arp.readLines().drop(1).forEach { line ->
+                              val cols = line.trim().split(Regex("\\s+"))
+                              if (cols.isNotEmpty() && cols[0].contains(".")) {
+                                  try {
+                                      list.add(InetAddress.getByName(cols[0]))
+                                  } catch (e: Throwable) {}
+                              }
+                          }
+                      }
+                      peerCache.values.forEach { p ->
+                          if (p.ip.isNotBlank() && p.ip != myIp) {
+                              try {
+                                  list.add(InetAddress.getByName(p.ip))
+                              } catch (e: Throwable) {}
+                          }
+                      }
+                  } catch (e: Throwable) {}
+                  return list.distinct()
+              }
+          }
+
+          // ============================================================================
+          // 3. BACKGROUND FOREGROUND SERVICE & LOW-MEMORY MEDIA / WAVEFORM ENGINE
+          // ============================================================================
+
+          class BgramDaemonService : Service() {
+              override fun onCreate() {
+                  super.onCreate()
+                  BgramHub.init(applicationContext)
+                  try {
+                      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                      val chId = "chatblack_bg_service"
+                      nm.createNotificationChannel(
+                          NotificationChannel(chId, "ChatBlack Background", NotificationManager.IMPORTANCE_LOW)
+                      )
+                      val notif = Notification.Builder(this, chId)
+                          .setSmallIcon(android.R.drawable.sym_action_chat)
+                          .setContentTitle("ChatBlack Active ($APP_VERSION_LABEL)")
+                          .setContentText("Listening for messages, photos & voice notes")
+                          .setOngoing(true)
+                          .build()
+                      if (Build.VERSION.SDK_INT >= 29) {
+                          startForeground(101, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                      } else {
+                          startForeground(101, notif)
+                      }
+                  } catch (e: Throwable) {}
+              }
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+              override fun onBind(intent: Intent?): IBinder? = null
+          }
+
+          object MediaHelper {
+              private const val WAVE_BAR_COUNT = 22
+              private var recorder: MediaRecorder? = null
+              private var outFile: File? = null
+              private var startMs: Long = 0L
+              private var player: MediaPlayer? = null
+              private val rawAmps = mutableListOf<Int>()
+
+              // LRU bitmap cache prevents repeated Base64 decoding & OutOfMemoryError on low-end phones
+              private val bitmapCache = LruCache<String, Bitmap>(28)
+
+              val isCurrentlyRecording = MutableStateFlow(false)
+              val recordingSec = MutableStateFlow(0)
+              val liveRecordingAmps = MutableStateFlow<List<Int>>(emptyList())
+
+              val playingMsgId = MutableStateFlow<String?>(null)
+              val voicePlaying = MutableStateFlow(false)
+              val progressFraction = MutableStateFlow(0f)
+              val currentSec = MutableStateFlow(0)
+
+              fun startRecording(ctx: Context): Boolean {
+                  return try {
+                      cancelRecording()
+                      val f = File(ctx.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
+                      outFile = f
+                      val r = MediaRecorder()
+                      r.setAudioSource(MediaRecorder.AudioSource.MIC)
+                      r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                      r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                      r.setAudioSamplingRate(16000)
+                      r.setAudioEncodingBitRate(28000)
+                      r.setOutputFile(f.absolutePath)
+                      r.prepare()
+                      r.start()
+                      recorder = r
+                      startMs = System.currentTimeMillis()
+                      synchronized(rawAmps) { rawAmps.clear() }
+                      liveRecordingAmps.value = List(WAVE_BAR_COUNT) { 12 }
+                      recordingSec.value = 0
+                      isCurrentlyRecording.value = true
+                      startAmplitudeSampler()
+                      true
+                  } catch (e: Throwable) {
+                      isCurrentlyRecording.value = false
+                      false
+                  }
+              }
+
+              private fun startAmplitudeSampler() {
+                  BgramHub.scope.launch {
+                      while (isActive && isCurrentlyRecording.value) {
+                          try {
+                              val r = recorder
+                              if (r != null) {
+                                  val amp = r.maxAmplitude
+                                  val norm = ((amp.toFloat() / 16000f).coerceIn(0.08f, 1f) * 100f).toInt()
+                                  synchronized(rawAmps) {
+                                      rawAmps.add(norm)
+                                      val tail = rawAmps.takeLast(WAVE_BAR_COUNT)
+                                      val padded = if (tail.size < WAVE_BAR_COUNT) List(WAVE_BAR_COUNT - tail.size) { 10 } + tail else tail
+                                      liveRecordingAmps.value = padded
+                                  }
+                                  recordingSec.value = ((System.currentTimeMillis() - startMs) / 1000L).toInt()
+                              }
+                          } catch (e: Throwable) {}
+                          delay(130)
+                      }
+                  }
+              }
+
+              fun cancelRecording() {
+                  isCurrentlyRecording.value = false
+                  val r = recorder
+                  recorder = null
+                  try { r?.stop() } catch (e: Throwable) {}
+                  try { r?.release() } catch (e: Throwable) {}
+                  try { outFile?.delete() } catch (e: Throwable) {}
+                  outFile = null
+              }
+
+              fun stopRecording(): VoiceClip? {
+                  isCurrentlyRecording.value = false
+                  val r = recorder ?: return null
+                  recorder = null
+                  return try {
+                      r.stop()
+                      r.release()
+                      val sec = ((System.currentTimeMillis() - startMs) / 1000L).toInt().coerceAtLeast(1)
+                      val f = outFile
+                      outFile = null
+                      val waveCsv = buildNormalizedWaveformCsv()
+                      if (f != null && f.exists()) {
+                          val bytes = f.readBytes()
+                          f.delete()
+                          VoiceClip(Base64.encodeToString(bytes, Base64.NO_WRAP), sec, waveCsv)
+                      } else {
+                          null
+                      }
+                  } catch (e: Throwable) {
+                      null
+                  }
+              }
+
+              private fun buildNormalizedWaveformCsv(): String {
+                  val snapshot = synchronized(rawAmps) { rawAmps.toList() }
+                  if (snapshot.isEmpty()) {
+                      return List(WAVE_BAR_COUNT) { 25 }.joinToString(",")
+                  }
+                  val bars = mutableListOf<Int>()
+                  for (i in 0 until WAVE_BAR_COUNT) {
+                      val idx = ((i.toFloat() / WAVE_BAR_COUNT.toFloat()) * snapshot.size).toInt().coerceIn(0, snapshot.size - 1)
+                      bars.add(snapshot[idx].coerceIn(10, 100))
+                  }
+                  return bars.joinToString(",")
+              }
+
+              fun parseWaveformBars(csv: String): List<Int> {
+                  val parsed = csv.split(",").mapNotNull { it.trim().toIntOrNull()?.coerceIn(10, 100) }
+                  if (parsed.size >= 8) return parsed
+                  return listOf(22, 40, 68, 35, 85, 54, 30, 75, 92, 48, 25, 62, 80, 44, 32, 70, 88, 52, 28, 60, 45, 34)
+              }
+
+              fun toggleVoicePlayback(ctx: Context, msgId: String, b64: String) {
+                  try {
+                      if (playingMsgId.value == msgId && player != null) {
+                          val p = player!!
+                          if (p.isPlaying) {
+                              p.pause()
+                              MediaHelper.voicePlaying.value = false
+                          } else {
+                              p.start()
+                              MediaHelper.voicePlaying.value = true
+                              startProgressTracker(msgId)
+                          }
+                          return
+                      }
+
+                      player?.release()
+                      val bytes = Base64.decode(b64, Base64.DEFAULT)
+                      val tmp = File(ctx.cacheDir, "play_${System.currentTimeMillis()}.m4a")
+                      tmp.writeBytes(bytes)
+                      val mp = MediaPlayer().apply {
+                          setDataSource(tmp.absolutePath)
+                          prepare()
+                          start()
+                          setOnCompletionListener {
+                              it.release()
+                              tmp.delete()
+                              if (playingMsgId.value == msgId) {
+                                  MediaHelper.voicePlaying.value = false
+                                  progressFraction.value = 0f
+                                  currentSec.value = 0
+                                  playingMsgId.value = null
+                              }
+                          }
+                      }
+                      player = mp
+                      playingMsgId.value = msgId
+                      MediaHelper.voicePlaying.value = true
+                      progressFraction.value = 0f
+                      currentSec.value = 0
+                      startProgressTracker(msgId)
+                  } catch (e: Throwable) {}
+              }
+
+              fun seekVoice(msgId: String, fraction: Float) {
+                  val clamped = fraction.coerceIn(0f, 1f)
+                  if (playingMsgId.value == msgId && player != null) {
+                      try {
+                          val p = player!!
+                          val dur = p.duration.coerceAtLeast(1)
+                          val targetMs = (dur * clamped).toInt()
+                          p.seekTo(targetMs)
+                          progressFraction.value = clamped
+                          currentSec.value = targetMs / 1000
+                      } catch (e: Throwable) {}
+                  }
+              }
+
+              private fun startProgressTracker(msgId: String) {
+                  BgramHub.scope.launch {
+                      while (isActive && playingMsgId.value == msgId && MediaHelper.voicePlaying.value) {
+                          try {
+                              val p = player
+                              if (p != null && p.isPlaying) {
+                                  val dur = p.duration.coerceAtLeast(1)
+                                  val pos = p.currentPosition.coerceAtLeast(0)
+                                  progressFraction.value = (pos.toFloat() / dur.toFloat()).coerceIn(0f, 1f)
+                                  currentSec.value = pos / 1000
+                              }
+                          } catch (e: Throwable) {}
+                          delay(120)
+                      }
+                  }
+              }
+
+              fun encodeUriToAvatarB64(ctx: Context, uri: Uri): String {
+                  return encodeScaledImageB64(ctx, uri, maxDim = 80, quality = 70)
+              }
+
+              fun encodeUriToChatImageB64(ctx: Context, uri: Uri): String {
+                  return encodeScaledImageB64(ctx, uri, maxDim = 420, quality = 65)
+              }
+
+              // Two-pass subsampled RGB_565 decoder prevents OOM crashes on low-RAM phones
+              private fun encodeScaledImageB64(ctx: Context, uri: Uri, maxDim: Int, quality: Int): String {
+                  return try {
+                      val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                      ctx.contentResolver.openInputStream(uri)?.use { s ->
+                          BitmapFactory.decodeStream(s, null, boundsOpts)
+                      }
+                      val rawW = boundsOpts.outWidth
+                      val rawH = boundsOpts.outHeight
+                      if (rawW <= 0 || rawH <= 0) return ""
+
+                      var sampleSize = 1
+                      while (rawW / sampleSize > maxDim * 2 || rawH / sampleSize > maxDim * 2) {
+                          sampleSize *= 2
+                      }
+
+                      val decodeOpts = BitmapFactory.Options().apply {
+                          inSampleSize = sampleSize
+                          inPreferredConfig = Bitmap.Config.RGB_565
+                      }
+                      val subsampled = ctx.contentResolver.openInputStream(uri)?.use { s ->
+                          BitmapFactory.decodeStream(s, null, decodeOpts)
+                      } ?: return ""
+
+                      val w = subsampled.width.coerceAtLeast(1)
+                      val h = subsampled.height.coerceAtLeast(1)
+                      val scale = (maxDim.toFloat() / maxOf(w, h).toFloat()).coerceAtMost(1f)
+                      val nw = (w * scale).toInt().coerceAtLeast(1)
+                      val nh = (h * scale).toInt().coerceAtLeast(1)
+                      val scaled = if (nw != w || nh != h) {
+                          Bitmap.createScaledBitmap(subsampled, nw, nh, true)
+                      } else {
+                          subsampled
+                      }
+                      val bos = ByteArrayOutputStream()
+                      scaled.compress(Bitmap.CompressFormat.JPEG, quality, bos)
+                      if (scaled !== subsampled) {
+                          subsampled.recycle()
+                      }
+                      Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP)
+                  } catch (e: Throwable) {
+                      ""
+                  }
+              }
+
+              fun decodeBitmap(b64: String): Bitmap? {
+                  if (b64.isBlank()) return null
+                  val cacheKey = "${b64.hashCode()}_${b64.length}"
+                  bitmapCache.get(cacheKey)?.let { cached ->
+                      if (!cached.isRecycled) return cached
+                  }
+                  return try {
+                      val bytes = Base64.decode(b64, Base64.DEFAULT)
+                      val opts = BitmapFactory.Options().apply {
+                          inPreferredConfig = Bitmap.Config.RGB_565
+                      }
+                      val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+                      if (bmp != null) {
+                          bitmapCache.put(cacheKey, bmp)
+                      }
+                      bmp
+                  } catch (e: Throwable) {
+                      null
+                  }
+              }
+          }
+
+          // ============================================================================
+          // 4. MAIN ACTIVITY & CHATBLACK UI (v1.0-release by ACE)
+          // ============================================================================
+
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  BgramHub.init(applicationContext)
+                  try {
+                      startForegroundService(Intent(this, BgramDaemonService::class.java))
+                  } catch (e: Throwable) {}
+
+                  try {
+                      val perms = mutableListOf(Manifest.permission.RECORD_AUDIO)
+                      if (Build.VERSION.SDK_INT >= 33) {
+                          perms.add(Manifest.permission.POST_NOTIFICATIONS)
+                      }
+                      requestPermissions(perms.toTypedArray(), 101)
+                  } catch (e: Throwable) {}
+
+                  intent?.getStringExtra("open_conv_id")?.let { BgramHub.activeConvId.value = it }
+
+                  setContent {
+                      MaterialTheme(
+                          colorScheme = darkColorScheme(
+                              primary = Color(0xFF007AFF),
+                              background = Color.Black,
+                              surface = Color(0xFF1C1C1E),
+                              surfaceVariant = Color(0xFF2C2C2E)
+                          )
+                      ) {
+                          val acc by BgramHub.account.collectAsState()
+                          val activeId by BgramHub.activeConvId.collectAsState()
+
+                          if (!acc.loggedIn) {
+                              DeviceLoginScreen(acc)
+                          } else if (activeId != null) {
+                              ChatRoomScreen(activeId!!)
+                          } else {
+                              InboxScreen()
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun AvatarCircle(
+              name: String,
+              avatarB64: String,
+              sizeDp: Dp,
+              isGroup: Boolean = false,
+              onClick: (() -> Unit)? = null
+          ) {
+              val bmp: Bitmap? = remember(avatarB64) { MediaHelper.decodeBitmap(avatarB64) }
+              val baseMod = Modifier
+                  .size(sizeDp)
+                  .clip(CircleShape)
+                  .background(Color(0xFF007AFF))
+              val finalMod = if (onClick != null) baseMod.clickable { onClick() } else baseMod
+
+              Box(modifier = finalMod, contentAlignment = Alignment.Center) {
+                  if (bmp != null) {
+                      Image(
+                          bitmap = bmp.asImageBitmap(),
+                          contentDescription = null,
+                          contentScale = ContentScale.Crop,
+                          modifier = Modifier.fillMaxSize()
+                      )
+                  } else if (isGroup) {
+                      Icon(
+                          imageVector = Icons.Default.Groups,
+                          contentDescription = null,
+                          tint = Color.White,
+                          modifier = Modifier.size(20.dp)
+                      )
+                  } else {
+                      Text(
+                          text = name.take(1).uppercase().ifBlank { "C" },
+                          color = Color.White,
+                          fontWeight = FontWeight.Bold,
+                          fontSize = 16.sp
+                      )
+                  }
+              }
+          }
+
+          @Composable
+          fun VoiceWaveformBar(
+              bars: List<Int>,
+              progress: Float,
+              activeColor: Color = Color.White,
+              inactiveColor: Color = Color(0x55FFFFFF),
+              onSeek: ((Float) -> Unit)? = null,
+              modifier: Modifier = Modifier
+          ) {
+              val safeBars = if (bars.isEmpty()) List(22) { 30 } else bars
+              val gestureMod = if (onSeek != null) {
+                  modifier
+                      .pointerInput(safeBars.size) {
+                          detectTapGestures { offset ->
+                              val w = size.width.toFloat().coerceAtLeast(1f)
+                              onSeek((offset.x / w).coerceIn(0f, 1f))
+                          }
+                      }
+                      .pointerInput(Unit) {
+                          detectHorizontalDragGestures { change, _ ->
+                              change.consume()
+                              val w = size.width.toFloat().coerceAtLeast(1f)
+                              onSeek((change.position.x / w).coerceIn(0f, 1f))
+                          }
+                      }
+              } else {
+                  modifier
+              }
+
+              Row(
+                  modifier = gestureMod
+                      .height(30.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(2.dp)
+              ) {
+                  safeBars.forEachIndexed { idx, amp ->
+                      val barFrac = (idx.toFloat() + 0.5f) / safeBars.size.toFloat()
+                      val filled = barFrac <= progress
+                      val barHeight = (4f + (amp.coerceIn(8, 100) / 100f) * 22f).dp
+                      Box(
+                          modifier = Modifier
+                              .weight(1f)
+                              .height(barHeight)
+                              .clip(RoundedCornerShape(3.dp))
+                              .background(if (filled) activeColor else inactiveColor)
+                      )
+                  }
+              }
+          }
+
+          @Composable
+          fun DeviceLoginScreen(acc: UserAccount) {
+              val ctx = LocalContext.current
+              val clip = LocalClipboardManager.current
+              var name by remember { mutableStateOf(acc.displayName) }
+              var avatarB64 by remember { mutableStateOf(acc.avatarB64) }
+
+              val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+                  if (uri != null) {
+                      avatarB64 = MediaHelper.encodeUriToAvatarB64(ctx, uri)
+                  }
+              }
+
+              Column(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .background(Color.Black)
+                      .padding(24.dp)
+                      .statusBarsPadding(),
+                  verticalArrangement = Arrangement.Center,
+                  horizontalAlignment = Alignment.CenterHorizontally
+              ) {
+                  AvatarCircle(
+                      name = name.ifBlank { "C" },
+                      avatarB64 = avatarB64,
+                      sizeDp = 92.dp,
+                      onClick = { picker.launch("image/*") }
+                  )
+                  Spacer(Modifier.height(8.dp))
+                  TextButton(onClick = { picker.launch("image/*") }) {
+                      Text("Tap to Set Profile Photo", color = Color(0xFF007AFF))
+                  }
+                  Spacer(Modifier.height(10.dp))
+                  Text(
+                      text = "ChatBlack",
+                      fontSize = 30.sp,
+                      fontFamily = FontFamily.SansSerif,
+                      fontWeight = FontWeight.Bold,
+                      color = Color.White
+                  )
+                  Text(
+                      text = APP_VERSION_LABEL,
+                      fontSize = 12.sp,
+                      fontFamily = FontFamily.SansSerif,
+                      fontWeight = FontWeight.Bold,
+                      color = Color(0xFF007AFF)
+                  )
+                  Spacer(Modifier.height(18.dp))
+
+                  Surface(
+                      color = Color(0xFF1C1C1E),
+                      shape = RoundedCornerShape(14.dp),
+                      modifier = Modifier.fillMaxWidth()
+                  ) {
+                      Row(
+                          modifier = Modifier.padding(14.dp).fillMaxWidth(),
+                          horizontalArrangement = Arrangement.SpaceBetween,
+                          verticalAlignment = Alignment.CenterVertically
+                      ) {
+                          Column {
+                              Text("DEVICE-BOUND CHATBLACK ID", fontSize = 10.sp, color = Color.Gray)
+                              Text(
+                                  text = "@${acc.uid}",
+                                  fontSize = 19.sp,
+                                  fontWeight = FontWeight.Bold,
+                                  color = Color(0xFF007AFF),
+                                  fontFamily = FontFamily.Monospace
+                              )
+                          }
+                          IconButton(onClick = { clip.setText(AnnotatedString(acc.uid)) }) {
+                              Icon(Icons.Default.ContentCopy, contentDescription = "Copy ID", tint = Color(0xFF007AFF))
+                          }
+                      }
+                  }
+
+                  Spacer(Modifier.height(16.dp))
+                  OutlinedTextField(
+                      value = name,
+                      onValueChange = { name = it },
+                      label = { Text("Display Name") },
+                      singleLine = true,
+                      modifier = Modifier.fillMaxWidth()
+                  )
+
+                  Spacer(Modifier.height(24.dp))
+                  Button(
+                      onClick = { BgramHub.login(name, avatarB64) },
+                      enabled = name.isNotBlank(),
+                      shape = RoundedCornerShape(14.dp),
+                      colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF)),
+                      modifier = Modifier.fillMaxWidth().height(50.dp)
+                  ) {
+                      Text("Sign In to ChatBlack", color = Color.White, fontWeight = FontWeight.Bold)
+                  }
+              }
+          }
+
+          @Composable
+          fun InboxScreen() {
+              val clip = LocalClipboardManager.current
+              val ctx = LocalContext.current
+              val acc by BgramHub.account.collectAsState()
+              val convs by BgramHub.conversations.collectAsState()
+              val peers by BgramHub.peers.collectAsState()
+              val ip by BgramHub.localIp.collectAsState()
+              val apkEnabled by BgramHub.apkServerEnabled.collectAsState()
+
+              var fabExpanded by remember { mutableStateOf(false) }
+              var showNewDirect by remember { mutableStateOf(false) }
+              var showNewGroup by remember { mutableStateOf(false) }
+              var showProfileModal by remember { mutableStateOf(false) }
+              var showApkShareModal by remember { mutableStateOf(false) }
+
+              val apkUrl = "http://$ip:${BgramHub.HTTP_PORT}"
+              val fabRotation by animateFloatAsState(targetValue = if (fabExpanded) 45f else 0f, label = "fabRotate")
+
+              Scaffold(
+                  containerColor = Color.Black,
+                  topBar = {
+                      Column(
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .background(Color.Black)
+                              .statusBarsPadding()
+                              .padding(horizontal = 16.dp, vertical = 10.dp)
+                      ) {
+                          Row(
+                              modifier = Modifier
+                                  .fillMaxWidth()
+                                  .clickable { showProfileModal = true },
+                              horizontalArrangement = Arrangement.SpaceBetween,
+                              verticalAlignment = Alignment.CenterVertically
+                          ) {
+                              Row(
+                                  verticalAlignment = Alignment.CenterVertically,
+                                  modifier = Modifier.weight(1f)
+                              ) {
+                                  AvatarCircle(acc.displayName, acc.avatarB64, 38.dp)
+                                  Spacer(Modifier.width(10.dp))
+                                  Column {
+                                      Text(
+                                          text = acc.displayName,
+                                          color = Color.White,
+                                          fontWeight = FontWeight.SemiBold,
+                                          fontSize = 15.sp,
+                                          maxLines = 1,
+                                          overflow = TextOverflow.Ellipsis
+                                      )
+                                      Text(
+                                          text = "@${acc.uid}",
+                                          color = Color(0xFF007AFF),
+                                          fontSize = 12.sp,
+                                          fontFamily = FontFamily.Monospace,
+                                          maxLines = 1
+                                      )
+                                  }
+                              }
+                              Surface(
+                                  color = Color(0xFF1C1C1E),
+                                  shape = RoundedCornerShape(12.dp),
+                                  modifier = Modifier.clickable { showProfileModal = true }
+                              ) {
+                                  Text(
+                                      text = "Profile / Logout",
+                                      color = Color(0xFF007AFF),
+                                      fontSize = 11.sp,
+                                      fontWeight = FontWeight.SemiBold,
+                                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                  )
+                              }
+                          }
+                          Spacer(Modifier.height(10.dp))
+                          Row(
+                              verticalAlignment = Alignment.Bottom,
+                              horizontalArrangement = Arrangement.spacedBy(8.dp)
+                          ) {
+                              Text(
+                                  text = "ChatBlack",
+                                  fontSize = 32.sp,
+                                  fontFamily = FontFamily.SansSerif,
+                                  fontWeight = FontWeight.Bold,
+                                  color = Color.White
+                              )
+                              Text(
+                                  text = APP_VERSION_LABEL,
+                                  fontSize = 12.sp,
+                                  fontFamily = FontFamily.SansSerif,
+                                  fontWeight = FontWeight.Bold,
+                                  color = Color(0xFF007AFF),
+                                  modifier = Modifier.padding(bottom = 5.dp)
+                              )
+                          }
+                          Text(
+                              text = "IP: $ip - ${peers.size} online - APK server: ${if (apkEnabled) "enabled" else "disabled"}",
+                              fontSize = 11.sp,
+                              color = if (apkEnabled) Color.Gray else Color(0xFFFF9500),
+                              fontFamily = FontFamily.Monospace,
+                              maxLines = 1,
+                              overflow = TextOverflow.Ellipsis,
+                              modifier = Modifier.clickable { showApkShareModal = true }
+                          )
+                      }
+                  }
+              ) { pad ->
+                  Box(
+                      modifier = Modifier
+                          .fillMaxSize()
+                          .padding(pad)
+                  ) {
+                      if (convs.isEmpty()) {
+                          Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                              Column(
+                                  horizontalAlignment = Alignment.CenterHorizontally,
+                                  modifier = Modifier.padding(32.dp)
+                              ) {
+                                  Text("No conversations yet", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                                  Spacer(Modifier.height(6.dp))
+                                  Text(
+                                      text = "Tap the + button in the bottom-right corner to start a New Chat, create a Group, or manage the APK Server.",
+                                      color = Color.Gray,
+                                      fontSize = 13.sp
+                                  )
+                              }
+                          }
+                      } else {
+                          LazyColumn(
+                              modifier = Modifier.fillMaxSize(),
+                              contentPadding = PaddingValues(bottom = 96.dp)
+                          ) {
+                              items(convs, key = { it.convId }) { c ->
+                                  val tf = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+                                  Row(
+                                      modifier = Modifier
+                                          .fillMaxWidth()
+                                          .clickable {
+                                              if (c.isGroup) {
+                                                  BgramHub.activeConvId.value = c.convId
+                                                  BgramHub.markConversationReadAndNotify(c.convId)
+                                              } else {
+                                                  BgramHub.openOrCreateDirect(c.convId, c.title, c.peerIp)
+                                              }
+                                          }
+                                          .padding(horizontal = 16.dp, vertical = 12.dp),
+                                      verticalAlignment = Alignment.CenterVertically
+                                  ) {
+                                      Box(
+                                          modifier = Modifier
+                                              .size(9.dp)
+                                              .clip(CircleShape)
+                                              .background(if (c.unread > 0) Color(0xFF007AFF) else Color.Transparent)
+                                      )
+                                      Spacer(Modifier.width(8.dp))
+                                      AvatarCircle(c.title, c.avatarB64, 48.dp, isGroup = c.isGroup)
+                                      Spacer(Modifier.width(12.dp))
+                                      Column(modifier = Modifier.weight(1f)) {
+                                          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                              Text(c.title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1)
+                                              Text(tf.format(Date(c.updatedAt)), color = Color.Gray, fontSize = 12.sp)
+                                          }
+                                          Text(
+                                              text = c.snippet.ifBlank { if (c.isGroup) "Group: ${c.membersCsv}" else "@${c.convId}" },
+                                              color = if (c.unread > 0) Color.White else Color.Gray,
+                                              fontSize = 13.sp,
+                                              maxLines = 1,
+                                              overflow = TextOverflow.Ellipsis
+                                          )
+                                      }
+                                  }
+                                  HorizontalDivider(color = Color(0xFF1C1C1E), thickness = 0.5.dp, modifier = Modifier.padding(start = 74.dp))
+                              }
+                          }
+                      }
+
+                      if (fabExpanded) {
+                          Box(
+                              modifier = Modifier
+                                  .fillMaxSize()
+                                  .background(Color(0x88000000))
+                                  .clickable { fabExpanded = false }
+                          )
+                      }
+
+                      Column(
+                          modifier = Modifier
+                              .align(Alignment.BottomEnd)
+                              .navigationBarsPadding()
+                              .padding(end = 20.dp, bottom = 20.dp),
+                          horizontalAlignment = Alignment.End,
+                          verticalArrangement = Arrangement.spacedBy(12.dp)
+                      ) {
+                          AnimatedVisibility(
+                              visible = fabExpanded,
+                              enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom),
+                              exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom)
+                          ) {
+                              Column(
+                                  horizontalAlignment = Alignment.End,
+                                  verticalArrangement = Arrangement.spacedBy(12.dp)
+                              ) {
+                                  Row(
+                                      verticalAlignment = Alignment.CenterVertically,
+                                      modifier = Modifier.clickable {
+                                          fabExpanded = false
+                                          showApkShareModal = true
+                                      }
+                                  ) {
+                                      Surface(
+                                          color = Color(0xFF1C1C1E),
+                                          shape = RoundedCornerShape(10.dp)
+                                      ) {
+                                          Text(
+                                              text = if (apkEnabled) "Share APK (Enabled)" else "Share APK (Disabled)",
+                                              color = Color.White,
+                                              fontSize = 13.sp,
+                                              fontWeight = FontWeight.Medium,
+                                              modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                          )
+                                      }
+                                      Spacer(Modifier.width(10.dp))
+                                      Box(
+                                          modifier = Modifier
+                                              .size(46.dp)
+                                              .clip(CircleShape)
+                                              .background(Color(0xFF1C1C1E)),
+                                          contentAlignment = Alignment.Center
+                                      ) {
+                                          Icon(Icons.Default.Share, contentDescription = "Share APK", tint = Color(0xFF007AFF))
+                                      }
+                                  }
+
+                                  Row(
+                                      verticalAlignment = Alignment.CenterVertically,
+                                      modifier = Modifier.clickable {
+                                          fabExpanded = false
+                                          showNewGroup = true
+                                      }
+                                  ) {
+                                      Surface(
+                                          color = Color(0xFF1C1C1E),
+                                          shape = RoundedCornerShape(10.dp)
+                                      ) {
+                                          Text(
+                                              text = "New Group Chat",
+                                              color = Color.White,
+                                              fontSize = 13.sp,
+                                              fontWeight = FontWeight.Medium,
+                                              modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                          )
+                                      }
+                                      Spacer(Modifier.width(10.dp))
+                                      Box(
+                                          modifier = Modifier
+                                              .size(46.dp)
+                                              .clip(CircleShape)
+                                              .background(Color(0xFF1C1C1E)),
+                                          contentAlignment = Alignment.Center
+                                      ) {
+                                          Icon(Icons.Default.GroupAdd, contentDescription = "New Group", tint = Color(0xFF007AFF))
+                                      }
+                                  }
+
+                                  Row(
+                                      verticalAlignment = Alignment.CenterVertically,
+                                      modifier = Modifier.clickable {
+                                          fabExpanded = false
+                                          showNewDirect = true
+                                      }
+                                  ) {
+                                      Surface(
+                                          color = Color(0xFF1C1C1E),
+                                          shape = RoundedCornerShape(10.dp)
+                                      ) {
+                                          Text(
+                                              text = "New Message",
+                                              color = Color.White,
+                                              fontSize = 13.sp,
+                                              fontWeight = FontWeight.Medium,
+                                              modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                          )
+                                      }
+                                      Spacer(Modifier.width(10.dp))
+                                      Box(
+                                          modifier = Modifier
+                                              .size(46.dp)
+                                              .clip(CircleShape)
+                                              .background(Color(0xFF1C1C1E)),
+                                          contentAlignment = Alignment.Center
+                                      ) {
+                                          Icon(Icons.Default.Edit, contentDescription = "New Message", tint = Color(0xFF007AFF))
+                                      }
+                                  }
+                              }
+                          }
+
+                          FloatingActionButton(
+                              onClick = { fabExpanded = !fabExpanded },
+                              containerColor = Color(0xFF007AFF),
+                              contentColor = Color.White,
+                              shape = CircleShape,
+                              modifier = Modifier.size(58.dp)
+                          ) {
+                              Icon(
+                                  imageVector = Icons.Default.Add,
+                                  contentDescription = "Menu",
+                                  modifier = Modifier
+                                      .size(28.dp)
+                                      .rotate(fabRotation)
+                              )
+                          }
+                      }
+                  }
+              }
+
+              if (showApkShareModal) {
+                  AlertDialog(
+                      onDismissRequest = { showApkShareModal = false },
+                      containerColor = Color(0xFF1C1C1E),
+                      title = { Text("Direct LAN APK Server", color = Color.White, fontWeight = FontWeight.Bold) },
+                      text = {
+                          Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                              Row(
+                                  modifier = Modifier.fillMaxWidth(),
+                                  horizontalArrangement = Arrangement.SpaceBetween,
+                                  verticalAlignment = Alignment.CenterVertically
+                              ) {
+                                  Column(modifier = Modifier.weight(1f)) {
+                                      Text("APK Server", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                      Text(
+                                          text = if (apkEnabled) "Enabled on port 8080" else "Disabled (Default)",
+                                          color = if (apkEnabled) Color(0xFF30D158) else Color.Gray,
+                                          fontSize = 12.sp
+                                      )
+                                  }
+                                  Switch(
+                                      checked = apkEnabled,
+                                      onCheckedChange = { BgramHub.setApkServerEnabled(it) }
+                                  )
+                              }
+
+                              if (apkEnabled) {
+                                  Text(
+                                      text = "Anyone on your Wi-Fi or Hotspot can download ChatBlack ($APP_VERSION_LABEL) directly by opening this address in their browser:",
+                                      color = Color.LightGray,
+                                      fontSize = 13.sp
+                                  )
+                                  Surface(
+                                      color = Color(0xFF2C2C2E),
+                                      shape = RoundedCornerShape(10.dp),
+                                      modifier = Modifier.fillMaxWidth()
+                                  ) {
+                                      Text(
+                                          text = "$apkUrl/chatblack.apk",
+                                          color = Color(0xFF007AFF),
+                                          fontFamily = FontFamily.Monospace,
+                                          fontWeight = FontWeight.Bold,
+                                          fontSize = 13.sp,
+                                          modifier = Modifier.padding(12.dp)
+                                      )
+                                  }
+                              } else {
+                                  Text(
+                                      text = "APK Server is disabled by default. Turn on the switch above whenever you want nearby devices to download ChatBlack over LAN.",
+                                      color = Color.Gray,
+                                      fontSize = 13.sp
+                                  )
+                              }
+                          }
+                      },
+                      confirmButton = {
+                          if (apkEnabled) {
+                              Button(onClick = {
+                                  clip.setText(AnnotatedString("$apkUrl/chatblack.apk"))
+                                  showApkShareModal = false
+                              }) { Text("Copy APK Link") }
+                          }
+                      },
+                      dismissButton = {
+                          TextButton(onClick = { showApkShareModal = false }) { Text("Close") }
+                      }
+                  )
+              }
+
+              if (showNewDirect) {
+                  var uidIn by remember { mutableStateOf("") }
+                  var ipIn by remember { mutableStateOf("") }
+                  AlertDialog(
+                      onDismissRequest = { showNewDirect = false },
+                      containerColor = Color(0xFF1C1C1E),
+                      title = { Text("New Message", color = Color.White, fontWeight = FontWeight.Bold) },
+                      text = {
+                          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                              OutlinedTextField(value = uidIn, onValueChange = { uidIn = it }, label = { Text("Contact @ID") }, singleLine = true)
+                              OutlinedTextField(value = ipIn, onValueChange = { ipIn = it }, label = { Text("IP (Optional on Wi-Fi/Hotspot)") }, singleLine = true)
+                              if (peers.isNotEmpty()) {
+                                  Text("DISCOVERED CONTACTS", fontSize = 11.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                                  peers.forEach { p ->
+                                      Row(
+                                          modifier = Modifier
+                                              .fillMaxWidth()
+                                              .clickable {
+                                                  showNewDirect = false
+                                                  BgramHub.openOrCreateDirect(p.uid, p.name, p.ip)
+                                              }
+                                              .padding(vertical = 6.dp),
+                                          verticalAlignment = Alignment.CenterVertically
+                                      ) {
+                                          AvatarCircle(p.name, p.avatarB64, 28.dp)
+                                          Spacer(Modifier.width(8.dp))
+                                          Text("${p.name} (@${p.uid}) - ${p.ip}", color = Color.White, fontSize = 13.sp)
+                                      }
+                                  }
+                              }
+                          }
+                      },
+                      confirmButton = {
+                          Button(
+                              onClick = {
+                                  showNewDirect = false
+                                  BgramHub.openOrCreateDirect(uidIn, null, ipIn.ifBlank { null })
+                              },
+                              enabled = uidIn.isNotBlank()
+                          ) { Text("Chat") }
+                      }
+                  )
+              }
+
+              if (showNewGroup) {
+                  var gName by remember { mutableStateOf("") }
+                  var extraIds by remember { mutableStateOf("") }
+                  var selectedSet by remember { mutableStateOf(setOf<String>()) }
+                  AlertDialog(
+                      onDismissRequest = { showNewGroup = false },
+                      containerColor = Color(0xFF1C1C1E),
+                      title = { Text("New Group Chat", color = Color.White, fontWeight = FontWeight.Bold) },
+                      text = {
+                          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                              OutlinedTextField(value = gName, onValueChange = { gName = it }, label = { Text("Group Name") }, singleLine = true)
+                              OutlinedTextField(value = extraIds, onValueChange = { extraIds = it }, label = { Text("Member @IDs (comma-separated)") }, singleLine = true)
+                              if (peers.isNotEmpty()) {
+                                  Text("SELECT NEARBY CONTACTS", fontSize = 11.sp, color = Color.Gray)
+                                  peers.forEach { p ->
+                                      val checked = selectedSet.contains(p.uid)
+                                      Row(
+                                          verticalAlignment = Alignment.CenterVertically,
+                                          modifier = Modifier
+                                              .fillMaxWidth()
+                                              .clickable {
+                                                  selectedSet = if (checked) selectedSet - p.uid else selectedSet + p.uid
+                                              }
+                                      ) {
+                                          Checkbox(
+                                              checked = checked,
+                                              onCheckedChange = {
+                                                  selectedSet = if (checked) selectedSet - p.uid else selectedSet + p.uid
+                                              }
+                                          )
+                                          Text("${p.name} (@${p.uid})", color = Color.White, fontSize = 13.sp)
+                                      }
+                                  }
+                              }
+                          }
+                      },
+                      confirmButton = {
+                          Button(
+                              onClick = {
+                                  val manual = extraIds.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                                  BgramHub.createGroup(gName, selectedSet.toList() + manual)
+                                  showNewGroup = false
+                              },
+                              enabled = gName.isNotBlank() && (selectedSet.isNotEmpty() || extraIds.isNotBlank())
+                          ) { Text("Create Group") }
+                      }
+                  )
+              }
+
+              if (showProfileModal) {
+                  var editName by remember { mutableStateOf(acc.displayName) }
+                  var editAvatar by remember { mutableStateOf(acc.avatarB64) }
+                  val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { u: Uri? ->
+                      if (u != null) editAvatar = MediaHelper.encodeUriToAvatarB64(ctx, u)
+                  }
+                  AlertDialog(
+                      onDismissRequest = { showProfileModal = false },
+                      containerColor = Color(0xFF1C1C1E),
+                      title = { Text("Account & Device Session", color = Color.White, fontWeight = FontWeight.Bold) },
+                      text = {
+                          Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                              AvatarCircle(
+                                  name = editName,
+                                  avatarB64 = editAvatar,
+                                  sizeDp = 72.dp,
+                                  onClick = { picker.launch("image/*") }
+                              )
+                              TextButton(onClick = { picker.launch("image/*") }) {
+                                  Text("Change Profile Picture", color = Color(0xFF007AFF))
+                              }
+                              OutlinedTextField(value = editName, onValueChange = { editName = it }, label = { Text("Display Name") }, singleLine = true)
+                              Text("Device-Bound ID: @${acc.uid}", color = Color.Gray, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                          }
+                      },
+                      confirmButton = {
+                          Button(onClick = {
+                              BgramHub.login(editName.ifBlank { acc.displayName }, editAvatar)
+                              showProfileModal = false
+                          }) { Text("Save") }
+                      },
+                      dismissButton = {
+                          TextButton(onClick = {
+                              showProfileModal = false
+                              BgramHub.logout()
+                          }) {
+                              Text("Log Out", color = Color(0xFFFF453A), fontWeight = FontWeight.Bold)
+                          }
+                      }
+                  )
+              }
+          }
+
+          @Composable
+          fun ChatRoomScreen(cid: String) {
+              val ctx = LocalContext.current
+              val convs by BgramHub.conversations.collectAsState()
+              val allMsgs by BgramHub.messages.collectAsState()
+              val conv = convs.firstOrNull { it.convId == cid } ?: ConversationMeta(cid, cid)
+              val list = allMsgs.filter { it.convId == cid }
+
+              val isRecording by MediaHelper.isCurrentlyRecording.collectAsState()
+              val recSec by MediaHelper.recordingSec.collectAsState()
+              val liveAmps by MediaHelper.liveRecordingAmps.collectAsState()
+
+              val playingMsgId by MediaHelper.playingMsgId.collectAsState()
+              val isPlayingAudio by MediaHelper.voicePlaying.collectAsState()
+              val audioProgress by MediaHelper.progressFraction.collectAsState()
+              val audioCurSec by MediaHelper.currentSec.collectAsState()
+
+              var textIn by remember { mutableStateOf("") }
+              var stagedVoice by remember { mutableStateOf<VoiceClip?>(null) }
+              var replyingTo by remember { mutableStateOf<ChatItem?>(null) }
+              var reactionTargetId by remember { mutableStateOf<String?>(null) }
+              var expandedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+              val listState = rememberLazyListState()
+              val timeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+
+              val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+                  if (uri != null) {
+                      val imgB64 = MediaHelper.encodeUriToChatImageB64(ctx, uri)
+                      if (imgB64.isNotBlank()) {
+                          BgramHub.sendChat(
+                              cid = cid,
+                              text = textIn.trim(),
+                              imageB64 = imgB64,
+                              replyTo = replyingTo
+                          )
+                          textIn = ""
+                          replyingTo = null
+                      }
+                  }
+              }
+
+              BackHandler {
+                  if (expandedBitmap != null) {
+                      expandedBitmap = null
+                  } else {
+                      BgramHub.activeConvId.value = null
+                  }
+              }
+
+              LaunchedEffect(cid) {
+                  BgramHub.markConversationReadAndNotify(cid)
+              }
+
+              LaunchedEffect(list.size) {
+                  if (list.isNotEmpty()) listState.animateScrollToItem(list.size - 1)
+              }
+
+              Scaffold(
+                  containerColor = Color.Black,
+                  topBar = {
+                      Row(
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .background(Color(0xFF161618))
+                              .statusBarsPadding()
+                              .padding(horizontal = 8.dp, vertical = 8.dp),
+                          verticalAlignment = Alignment.CenterVertically
+                      ) {
+                          Row(
+                              verticalAlignment = Alignment.CenterVertically,
+                              modifier = Modifier
+                                  .clickable { BgramHub.activeConvId.value = null }
+                                  .padding(4.dp)
+                          ) {
+                              Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color(0xFF007AFF))
+                              Text("ChatBlack", color = Color(0xFF007AFF), fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                          }
+                          Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                              AvatarCircle(conv.title, conv.avatarB64, 28.dp, isGroup = conv.isGroup)
+                              Text(conv.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                              Text(
+                                  text = if (conv.isGroup) "Group (${conv.membersCsv})" else "@${conv.convId}",
+                                  color = Color.Gray,
+                                  fontSize = 10.sp,
+                                  maxLines = 1
+                              )
+                          }
+                          Spacer(Modifier.width(72.dp))
+                      }
+                  }
+              ) { pad ->
+                  Column(modifier = Modifier.fillMaxSize().padding(pad).background(Color.Black)) {
+                      LazyColumn(
+                          state = listState,
+                          modifier = Modifier.weight(1f).fillMaxWidth(),
+                          contentPadding = PaddingValues(14.dp),
+                          verticalArrangement = Arrangement.spacedBy(8.dp)
+                      ) {
+                          items(list, key = { it.id }) { m ->
+                              val msgImg: Bitmap? = remember(m.imageB64) { MediaHelper.decodeBitmap(m.imageB64) }
+                              val reactions = remember(m.reactionsCsv) { m.reactionsCsv.split("|").filter { it.isNotBlank() } }
+                              val waveBars = remember(m.waveformCsv) { MediaHelper.parseWaveformBars(m.waveformCsv) }
+
+                              Column(
+                                  modifier = Modifier.fillMaxWidth(),
+                                  horizontalAlignment = if (m.mine) Alignment.End else Alignment.Start
+                              ) {
+                                  Text(
+                                      text = "${m.senderName.ifBlank { m.senderId }} (@${m.senderId}) - ${timeFmt.format(Date(m.ts))}",
+                                      fontSize = 10.sp,
+                                      color = Color.Gray,
+                                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                  )
+
+                                  Surface(
+                                      color = if (m.mine) Color(0xFF007AFF) else Color(0xFF26252A),
+                                      shape = RoundedCornerShape(18.dp),
+                                      modifier = Modifier
+                                          .widthIn(min = 130.dp, max = 295.dp)
+                                          .clickable {
+                                              reactionTargetId = if (reactionTargetId == m.id) null else m.id
+                                          }
+                                  ) {
+                                      Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+                                          if (m.replyToId.isNotBlank() || m.replyToText.isNotBlank()) {
+                                              Surface(
+                                                  color = Color(0x33000000),
+                                                  shape = RoundedCornerShape(10.dp),
+                                                  modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+                                              ) {
+                                                  Column(modifier = Modifier.padding(8.dp)) {
+                                                      Text(
+                                                          text = m.replyToSender.ifBlank { "Reply" },
+                                                          color = Color.White,
+                                                          fontWeight = FontWeight.Bold,
+                                                          fontSize = 11.sp
+                                                      )
+                                                      Text(
+                                                          text = m.replyToText,
+                                                          color = Color(0xFFE5E5EA),
+                                                          fontSize = 12.sp,
+                                                          maxLines = 2,
+                                                          overflow = TextOverflow.Ellipsis
+                                                      )
+                                                  }
+                                              }
+                                          }
+
+                                          if (msgImg != null) {
+                                              Image(
+                                                  bitmap = msgImg.asImageBitmap(),
+                                                  contentDescription = "Shared Image (Tap to Expand)",
+                                                  contentScale = ContentScale.Crop,
+                                                  modifier = Modifier
+                                                      .fillMaxWidth()
+                                                      .heightIn(min = 120.dp, max = 220.dp)
+                                                      .clip(RoundedCornerShape(12.dp))
+                                                      .clickable {
+                                                          expandedBitmap = msgImg
+                                                      }
+                                              )
+                                              if (m.text.isNotBlank()) Spacer(Modifier.height(6.dp))
+                                          }
+
+                                          if (m.voiceB64.isNotBlank()) {
+                                              val isThisPlaying = (playingMsgId == m.id && isPlayingAudio)
+                                              val curFrac = if (playingMsgId == m.id) audioProgress else 0f
+                                              val shownSec = if (playingMsgId == m.id) audioCurSec else m.voiceSec
+
+                                              Row(
+                                                  verticalAlignment = Alignment.CenterVertically,
+                                                  modifier = Modifier
+                                                      .fillMaxWidth()
+                                                      .padding(vertical = 2.dp)
+                                              ) {
+                                                  IconButton(
+                                                      onClick = { MediaHelper.toggleVoicePlayback(ctx, m.id, m.voiceB64) },
+                                                      modifier = Modifier
+                                                          .size(36.dp)
+                                                          .clip(CircleShape)
+                                                          .background(Color(0x33000000))
+                                                  ) {
+                                                      Icon(
+                                                          imageVector = if (isThisPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                                          contentDescription = "Play/Pause Voice",
+                                                          tint = Color.White
+                                                      )
+                                                  }
+                                                  Spacer(Modifier.width(10.dp))
+                                                  Column(modifier = Modifier.weight(1f)) {
+                                                      VoiceWaveformBar(
+                                                          bars = waveBars,
+                                                          progress = curFrac,
+                                                          activeColor = Color.White,
+                                                          inactiveColor = Color(0x55FFFFFF),
+                                                          onSeek = { newFrac ->
+                                                              if (playingMsgId != m.id) {
+                                                                  MediaHelper.toggleVoicePlayback(ctx, m.id, m.voiceB64)
+                                                              }
+                                                              MediaHelper.seekVoice(m.id, newFrac)
+                                                          },
+                                                          modifier = Modifier.fillMaxWidth()
+                                                      )
+                                                      Spacer(Modifier.height(3.dp))
+                                                      Text(
+                                                          text = "${shownSec}s / ${m.voiceSec}s",
+                                                          color = Color(0xFFE5E5EA),
+                                                          fontSize = 10.sp
+                                                      )
+                                                  }
+                                              }
+                                          }
+
+                                          if (m.text.isNotBlank()) {
+                                              Text(
+                                                  text = m.text,
+                                                  color = Color.White,
+                                                  fontSize = 15.sp
+                                              )
+                                          }
+                                      }
+                                  }
+
+                                  if (reactions.isNotEmpty()) {
+                                      Row(
+                                          horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                          modifier = Modifier.padding(top = 3.dp, start = 4.dp, end = 4.dp)
+                                      ) {
+                                          reactions.forEach { r ->
+                                              Surface(
+                                                  color = Color(0xFF1C1C1E),
+                                                  shape = RoundedCornerShape(10.dp),
+                                                  modifier = Modifier.clickable {
+                                                      val em = r.substringBefore(" ")
+                                                      if (em.isNotBlank()) BgramHub.sendReaction(cid, m.id, em)
+                                                  }
+                                              ) {
+                                                  Text(
+                                                      text = r,
+                                                      color = Color.White,
+                                                      fontSize = 11.sp,
+                                                      modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                                  )
+                                              }
+                                          }
+                                      }
+                                  }
+
+                                  if (reactionTargetId == m.id) {
+                                      Surface(
+                                          color = Color(0xFF1C1C1E),
+                                          shape = RoundedCornerShape(16.dp),
+                                          modifier = Modifier.padding(top = 4.dp)
+                                      ) {
+                                          Row(
+                                              verticalAlignment = Alignment.CenterVertically,
+                                              horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                              modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                          ) {
+                                              listOf("👍", "❤️", "😂", "🔥", "😮", "👏").forEach { emoji ->
+                                                  Text(
+                                                      text = emoji,
+                                                      fontSize = 18.sp,
+                                                      modifier = Modifier
+                                                          .clickable {
+                                                              BgramHub.sendReaction(cid, m.id, emoji)
+                                                              reactionTargetId = null
+                                                          }
+                                                          .padding(horizontal = 3.dp)
+                                                  )
+                                              }
+                                              Text(
+                                                  text = "Reply",
+                                                  color = Color(0xFF007AFF),
+                                                  fontWeight = FontWeight.Bold,
+                                                  fontSize = 12.sp,
+                                                  modifier = Modifier
+                                                      .clickable {
+                                                          replyingTo = m
+                                                          reactionTargetId = null
+                                                      }
+                                                      .padding(start = 6.dp)
+                                              )
+                                          }
+                                      }
+                                  }
+
+                                  Row(
+                                      verticalAlignment = Alignment.CenterVertically,
+                                      horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                      modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                  ) {
+                                      Text(
+                                          text = "Reply",
+                                          fontSize = 10.sp,
+                                          color = Color(0xFF007AFF),
+                                          modifier = Modifier.clickable { replyingTo = m }
+                                      )
+                                      Text(
+                                          text = "React",
+                                          fontSize = 10.sp,
+                                          color = Color.Gray,
+                                          modifier = Modifier.clickable {
+                                              reactionTargetId = if (reactionTargetId == m.id) null else m.id
+                                          }
+                                      )
+                                      if (m.mine) {
+                                          val receiptText = when {
+                                              m.readByPeer -> "Read ✓✓"
+                                              m.ack -> "Delivered ✓"
+                                              else -> "Sent"
+                                          }
+                                          Text(
+                                              text = receiptText,
+                                              fontSize = 10.sp,
+                                              fontWeight = if (m.readByPeer) FontWeight.Bold else FontWeight.Normal,
+                                              color = if (m.readByPeer) Color(0xFF007AFF) else Color.Gray
+                                          )
+                                      }
+                                  }
+                              }
+                          }
+                      }
+
+                      if (replyingTo != null) {
+                          val r = replyingTo!!
+                          Row(
+                              modifier = Modifier
+                                  .fillMaxWidth()
+                                  .background(Color(0xFF1C1C1E))
+                                  .padding(horizontal = 14.dp, vertical = 8.dp),
+                              horizontalArrangement = Arrangement.SpaceBetween,
+                              verticalAlignment = Alignment.CenterVertically
+                          ) {
+                              Column(modifier = Modifier.weight(1f)) {
+                                  Text(
+                                      text = "Replying to ${r.senderName.ifBlank { r.senderId }}",
+                                      color = Color(0xFF007AFF),
+                                      fontWeight = FontWeight.Bold,
+                                      fontSize = 12.sp
+                                  )
+                                  val rSub = when {
+                                      r.voiceB64.isNotBlank() -> "Voice Note (${r.voiceSec}s)"
+                                      r.imageB64.isNotBlank() -> "Photo"
+                                      else -> r.text
+                                  }
+                                  Text(
+                                      text = rSub,
+                                      color = Color.LightGray,
+                                      fontSize = 12.sp,
+                                      maxLines = 1,
+                                      overflow = TextOverflow.Ellipsis
+                                  )
+                              }
+                              IconButton(onClick = { replyingTo = null }, modifier = Modifier.size(28.dp)) {
+                                  Icon(Icons.Default.Close, contentDescription = "Cancel Reply", tint = Color.Gray)
+                              }
+                          }
+                      }
+
+                      // Bottom Chat Bar: Live Recording Bar, Voice Review Bar, or Spaced Input Bar
+                      Surface(
+                          color = Color(0xFF161618),
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .navigationBarsPadding()
+                              .imePadding()
+                      ) {
+                          if (isRecording) {
+                              Row(
+                                  modifier = Modifier
+                                      .fillMaxWidth()
+                                      .padding(horizontal = 12.dp, vertical = 12.dp),
+                                  verticalAlignment = Alignment.CenterVertically,
+                                  horizontalArrangement = Arrangement.spacedBy(10.dp)
+                              ) {
+                                  IconButton(
+                                      onClick = {
+                                          MediaHelper.cancelRecording()
+                                          stagedVoice = null
+                                      },
+                                      modifier = Modifier
+                                          .size(40.dp)
+                                          .clip(CircleShape)
+                                          .background(Color(0xFF2C2C2E))
+                                  ) {
+                                      Icon(Icons.Default.Delete, contentDescription = "Discard Recording", tint = Color(0xFFFF453A))
+                                  }
+
+                                  Row(
+                                      verticalAlignment = Alignment.CenterVertically,
+                                      horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                      modifier = Modifier
+                                          .weight(1f)
+                                          .clip(RoundedCornerShape(20.dp))
+                                          .background(Color(0xFF26252A))
+                                          .padding(horizontal = 12.dp, vertical = 8.dp)
+                                  ) {
+                                      Box(
+                                          modifier = Modifier
+                                              .size(10.dp)
+                                              .clip(CircleShape)
+                                              .background(Color(0xFFFF3B30))
+                                      )
+                                      Text(
+                                          text = String.format(Locale.US, "%d:%02d", recSec / 60, recSec % 60),
+                                          color = Color.White,
+                                          fontSize = 12.sp,
+                                          fontWeight = FontWeight.Bold,
+                                          fontFamily = FontFamily.Monospace
+                                      )
+                                      VoiceWaveformBar(
+                                          bars = liveAmps,
+                                          progress = 1f,
+                                          activeColor = Color(0xFF007AFF),
+                                          inactiveColor = Color(0x55FFFFFF),
+                                          modifier = Modifier.weight(1f)
+                                      )
+                                  }
+
+                                  IconButton(
+                                      onClick = {
+                                          stagedVoice = MediaHelper.stopRecording()
+                                      },
+                                      modifier = Modifier
+                                          .size(40.dp)
+                                          .clip(CircleShape)
+                                          .background(Color(0xFF2C2C2E))
+                                  ) {
+                                      Icon(Icons.Default.Stop, contentDescription = "Stop to Review", tint = Color.White)
+                                  }
+
+                                  IconButton(
+                                      onClick = {
+                                          val clip = MediaHelper.stopRecording()
+                                          if (clip != null) {
+                                              BgramHub.sendChat(
+                                                  cid = cid,
+                                                  text = "",
+                                                  voiceB64 = clip.b64,
+                                                  voiceSec = clip.sec,
+                                                  waveformCsv = clip.waveformCsv,
+                                                  replyTo = replyingTo
+                                              )
+                                              replyingTo = null
+                                          }
+                                      },
+                                      modifier = Modifier
+                                          .size(40.dp)
+                                          .clip(CircleShape)
+                                          .background(Color(0xFF007AFF))
+                                  ) {
+                                      Icon(Icons.Default.ArrowUpward, contentDescription = "Send Voice Note Directly", tint = Color.White)
+                                  }
+                              }
+                          } else if (stagedVoice != null) {
+                              val clip = stagedVoice!!
+                              val previewId = "staged_preview_voice"
+                              val isPreviewPlaying = (playingMsgId == previewId && isPlayingAudio)
+                              val previewProg = if (playingMsgId == previewId) audioProgress else 0f
+                              val previewBars = remember(clip.waveformCsv) { MediaHelper.parseWaveformBars(clip.waveformCsv) }
+
+                              Row(
+                                  modifier = Modifier
+                                      .fillMaxWidth()
+                                      .padding(horizontal = 12.dp, vertical = 12.dp),
+                                  verticalAlignment = Alignment.CenterVertically,
+                                  horizontalArrangement = Arrangement.spacedBy(10.dp)
+                              ) {
+                                  IconButton(
+                                      onClick = { stagedVoice = null },
+                                      modifier = Modifier
+                                          .size(40.dp)
+                                          .clip(CircleShape)
+                                          .background(Color(0xFF2C2C2E))
+                                  ) {
+                                      Icon(Icons.Default.Delete, contentDescription = "Delete Staged Voice", tint = Color(0xFFFF453A))
+                                  }
+
+                                  Row(
+                                      verticalAlignment = Alignment.CenterVertically,
+                                      horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                      modifier = Modifier
+                                          .weight(1f)
+                                          .clip(RoundedCornerShape(20.dp))
+                                          .background(Color(0xFF26252A))
+                                          .padding(horizontal = 10.dp, vertical = 6.dp)
+                                  ) {
+                                      IconButton(
+                                          onClick = { MediaHelper.toggleVoicePlayback(ctx, previewId, clip.b64) },
+                                          modifier = Modifier
+                                              .size(32.dp)
+                                              .clip(CircleShape)
+                                              .background(Color(0xFF007AFF))
+                                      ) {
+                                          Icon(
+                                              imageVector = if (isPreviewPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                              contentDescription = "Preview Voice",
+                                              tint = Color.White,
+                                              modifier = Modifier.size(18.dp)
+                                          )
+                                      }
+                                      VoiceWaveformBar(
+                                          bars = previewBars,
+                                          progress = previewProg,
+                                          activeColor = Color(0xFF007AFF),
+                                          inactiveColor = Color(0x55FFFFFF),
+                                          onSeek = { frac ->
+                                              if (playingMsgId != previewId) {
+                                                  MediaHelper.toggleVoicePlayback(ctx, previewId, clip.b64)
+                                              }
+                                              MediaHelper.seekVoice(previewId, frac)
+                                          },
+                                          modifier = Modifier.weight(1f)
+                                      )
+                                      Text(
+                                          text = "${clip.sec}s",
+                                          color = Color.LightGray,
+                                          fontSize = 11.sp,
+                                          fontFamily = FontFamily.Monospace
+                                      )
+                                  }
+
+                                  IconButton(
+                                      onClick = {
+                                          BgramHub.sendChat(
+                                              cid = cid,
+                                              text = "",
+                                              voiceB64 = clip.b64,
+                                              voiceSec = clip.sec,
+                                              waveformCsv = clip.waveformCsv,
+                                              replyTo = replyingTo
+                                          )
+                                          stagedVoice = null
+                                          replyingTo = null
+                                      },
+                                      modifier = Modifier
+                                          .size(40.dp)
+                                          .clip(CircleShape)
+                                          .background(Color(0xFF007AFF))
+                                  ) {
+                                      Icon(Icons.Default.ArrowUpward, contentDescription = "Send Reviewed Voice Note", tint = Color.White)
+                                  }
+                              }
+                          } else {
+                              Row(
+                                  modifier = Modifier
+                                      .fillMaxWidth()
+                                      .padding(horizontal = 12.dp, vertical = 10.dp),
+                                  verticalAlignment = Alignment.CenterVertically,
+                                  horizontalArrangement = Arrangement.spacedBy(10.dp)
+                              ) {
+                                  IconButton(
+                                      onClick = { imagePicker.launch("image/*") },
+                                      modifier = Modifier
+                                          .size(40.dp)
+                                          .clip(CircleShape)
+                                          .background(Color(0xFF2C2C2E))
+                                  ) {
+                                      Icon(
+                                          imageVector = Icons.Default.Image,
+                                          contentDescription = "Send Photo",
+                                          tint = Color(0xFF007AFF),
+                                          modifier = Modifier.size(19.dp)
+                                      )
+                                  }
+
+                                  IconButton(
+                                      onClick = {
+                                          MediaHelper.startRecording(ctx)
+                                      },
+                                      modifier = Modifier
+                                          .size(40.dp)
+                                          .clip(CircleShape)
+                                          .background(Color(0xFF2C2C2E))
+                                  ) {
+                                      Icon(
+                                          imageVector = Icons.Default.Mic,
+                                          contentDescription = "Record Voice Note",
+                                          tint = Color.White,
+                                          modifier = Modifier.size(19.dp)
+                                      )
+                                  }
+
+                                  OutlinedTextField(
+                                      value = textIn,
+                                      onValueChange = { textIn = it },
+                                      placeholder = {
+                                          Text(
+                                              text = "ChatBlack",
+                                              color = Color.Gray,
+                                              fontSize = 14.sp
+                                          )
+                                      },
+                                      singleLine = true,
+                                      shape = RoundedCornerShape(24.dp),
+                                      modifier = Modifier.weight(1f)
+                                  )
+
+                                  Box(
+                                      modifier = Modifier
+                                          .size(40.dp)
+                                          .clip(CircleShape)
+                                          .background(if (textIn.isNotBlank()) Color(0xFF007AFF) else Color(0xFF3A3A3C))
+                                          .clickable(enabled = textIn.isNotBlank()) {
+                                              BgramHub.sendChat(
+                                                  cid = cid,
+                                                  text = textIn.trim(),
+                                                  replyTo = replyingTo
+                                              )
+                                              textIn = ""
+                                              replyingTo = null
+                                          },
+                                      contentAlignment = Alignment.Center
+                                  ) {
+                                      Icon(Icons.Default.ArrowUpward, contentDescription = "Send", tint = Color.White, modifier = Modifier.size(19.dp))
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+
+              if (expandedBitmap != null) {
+                  Dialog(
+                      onDismissRequest = { expandedBitmap = null },
+                      properties = DialogProperties(usePlatformDefaultWidth = false)
+                  ) {
+                      Box(
+                          modifier = Modifier
+                              .fillMaxSize()
+                              .background(Color(0xF2000000))
+                              .clickable { expandedBitmap = null },
+                          contentAlignment = Alignment.Center
+                      ) {
+                          Image(
+                              bitmap = expandedBitmap!!.asImageBitmap(),
+                              contentDescription = "Expanded Photo",
+                              contentScale = ContentScale.Fit,
+                              modifier = Modifier
+                                  .fillMaxWidth()
+                                  .fillMaxHeight(0.88f)
+                                  .padding(12.dp)
+                          )
+                          IconButton(
+                              onClick = { expandedBitmap = null },
+                              modifier = Modifier
+                                  .align(Alignment.TopEnd)
+                                  .statusBarsPadding()
+                                  .padding(16.dp)
+                                  .size(42.dp)
+                                  .clip(CircleShape)
+                                  .background(Color(0xFF2C2C2E))
+                          ) {
+                              Icon(Icons.Default.Close, contentDescription = "Close Full Photo", tint = Color.White)
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+
+      - name: Compile ChatBlack Debug APK
+        run: |
+          gradle assembleDebug --no-daemon > build.log 2>&1 || (grep "^e: " build.log | head -n 20 && exit 1)
+          cp app/build/outputs/apk/debug/app-debug.apk ChatBlack-v1.0-release.apk
+
+      - name: Upload ChatBlack APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChatBlack-v1.0-release
+          path: ChatBlack-v1.0-release.apk
+          if-no-files-found: error
